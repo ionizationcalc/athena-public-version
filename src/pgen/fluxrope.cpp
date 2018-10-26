@@ -42,6 +42,7 @@ static Real func_bphi(const Real r);
 static Real func_rjphi(const Real r);
 static Real func_uphi(const Real r);
 static Real func_back(const Real r);
+static Real func_tini(const Real r);
 static Real func_bmx(const Real x1, const Real x2);
 static Real func_bmy(const Real x1, const Real x2);
 
@@ -58,9 +59,11 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
                           double fa, double fb, double fc, int bottom);
 
 // Global parameters to define the initial fluxrope
-static Real beta0;
+static Real beta0, temperature0;
+static int fr_case;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_rja;
-AthenaArray<Real> az;
+static Real fr_t_inner, fr_t_outer;
+
 
 // Boundary conditions
 void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
@@ -82,7 +85,7 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
 
 void Mesh::InitUserMeshData(ParameterInput *pin) {
   // Enroll boundary value function pointers
-  EnrollUserBoundaryFunction(INNER_X1, SymmInnerX1);
+  //EnrollUserBoundaryFunction(INNER_X1, SymmInnerX1);
   EnrollUserBoundaryFunction(INNER_X2, LinetiedInnerX2);
   //EnrollUserBoundaryFunction(OUTER_X2, OpenOuterX2);
   return;
@@ -110,7 +113,7 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
                             +SQR(pfield->bcc(IB3,k,j,i)));
         user_out_var(0,k,j,i) = phydro->w(IPR,k,j,i)/phydro->w(IDN,k,j,i);
         user_out_var(1,k,j,i) = phydro->w(IPR,k,j,i)/pmag;
-        user_out_var(2,k,j,i) = az(j, i);
+        user_out_var(2,k,j,i) = 0;
       }
     }
   }
@@ -126,27 +129,30 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   // Read input arguments
   Real gm1 = peos->GetGamma() - 1.0;
+  Real gamma = peos->GetGamma();
   beta0 = pin->GetReal("problem","beta0");
+  temperature0 = pin->GetReal("problem","temperature0");
+  Real p0 = beta0/2.0;
 
   // Initialize the flux rope
-  fr_d = 0.4;
-  fr_h = 0.75*fr_d;
-  fr_ri = 0.125*fr_d;
-  fr_del = 0.025*fr_d;
+  fr_case = pin->GetInteger("problem","fr_case");
+  fr_d  = pin->GetReal("problem","fr_d");
+  fr_h  = pin->GetReal("problem","fr_h");
+  fr_ri = pin->GetReal("problem","fr_ri");
+  fr_del = pin->GetReal("problem","fr_del");
+  fr_rja = pin->GetReal("problem","fr_rja");
+  fr_t_inner = pin->GetReal("problem","fr_t_inner")/temperature0*(beta0*0.5);
+  fr_t_outer = pin->GetReal("problem","fr_t_outer")/temperature0*(beta0*0.5);
   fr_rmom = fr_d * fr_d * 125. / 32. * 0.80;
-  fr_rja = 600.0;
+  if (fr_case == 1) fr_rmom=1.0;
 
+  // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
   int nx2 = (je-js)+1 + 2*(NGHOST);
+  AthenaArray<Real> az;
   az.NewAthenaArray(nx2,nx1);
-
-  AthenaArray<Real> pgas;
-  pgas.NewAthenaArray(nx2,nx1);
-
-  Real B0 = 1.0;
-  Real d0 = 1.0;
-  Real v0 = 1.0;
-  Real p0 = 0.05;
+  AthenaArray<Real> p_add;
+  p_add.NewAthenaArray(nx2,nx1);
 
   // Initialize vector potential
   for (int j=js; j<=je+1; ++j) {
@@ -154,22 +160,24 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     az(j,i) = func_azini(pcoord->x1f(i), pcoord->x2f(j));
   }}
 
-  // Initialize gas pressure
+  // Initialize additional pressure inside the fluxrope 
   Real r, xc, yc;
   for (int j=js; j<=je; ++j) {
   for (int i=is; i<=ie; ++i) {
-    // Assuming p_ambient = p0 = 0.05
     xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
     yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
     r = sqrt(pow(xc, 2) + pow(yc-fr_h, 2));
-    pgas(j,i) = p0 + func_uphi(r);
+    p_add(j,i) = func_uphi(r);
   }}
 
   // Initialize density, momentum, face-centered fields
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie; i++) {
-    phydro->u(IDN,k,j,i) = pgas(j,i)/(beta0/2.0);
+    xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
+    yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
+    r = sqrt(pow(xc, 2) + pow(yc-fr_h, 2));
+    phydro->u(IDN,k,j,i) = (p0 + p_add(j,i))/(beta0/2.0);
     phydro->u(IM1,k,j,i) = 0.0;
     phydro->u(IM2,k,j,i) = 0.0;
     phydro->u(IM3,k,j,i) = 0.0;
@@ -189,7 +197,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   for (int k=ks; k<=ke+1; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie; i++) {
-    pfield->b.x3f(k,j,i) = 0.0;
+    pfield->b.x3f(k,j,i) = 0;
   }}}
 
   // initialize total energy
@@ -197,7 +205,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     for (int k=ks; k<=ke; k++) {
     for (int j=js; j<=je; j++) {
     for (int i=is; i<=ie; i++) {
-      phydro->u(IEN,k,j,i) = pgas(j,i)/gm1 +
+      phydro->u(IEN,k,j,i) = (p0 + p_add(j,i))/gm1 +
           0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
                SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
                SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i)))) + (0.5)*
@@ -206,13 +214,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     }}}
   }
 
-  //az.DeleteAthenaArray();
-  pgas.DeleteAthenaArray();
+  az.DeleteAthenaArray();
+  p_add.DeleteAthenaArray();
   return;
 }
 
 //==============================================================================
-// function of the initial az(x, y)
+// function: initial az(x, y)
 //==============================================================================
 Real func_azini(Real x, Real y) {  
   Real Ixx, Iyy, az_out;
@@ -259,15 +267,17 @@ static Real func_bmx(const Real x, const Real y)
   rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
   if (rs > 0.0)
   {
-    /* dipole case 
+    if (fr_case == 1) {
+    /* dipole case */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
         -func_bphi(rm)*(y+fr_h)/rm
-        -func_bphi(rb)*fr_d*fr_rmom*rb*(pow(x,2)-pow(y+fr_d, 2))/pow(rb,4);*/
-
+        -func_bphi(rb)*fr_d*fr_rmom*rb*(pow(x,2)-pow(y+fr_d, 2))/pow(rb,4);
+    } else {
     /* quadrupole */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
           -func_bphi(rm)*(y+fr_h)/rm
           -fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
+    }
   }
   else
   {
@@ -286,15 +296,17 @@ static Real func_bmy(const Real x, const Real y)
   rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
   if (rs > 0.0)
   {
-    /* dipole case 
+    if (fr_case == 1) {
+    /* dipole case */
     bmy = -func_bphi(rs)*x/rs
           +func_bphi(rm)*x/rm
-          -func_bphi(rb)*fr_d*fr_rmom*rb*(2.0*x*(y+fr_d))/pow(rb,4); */
-
+          -func_bphi(rb)*fr_d*fr_rmom*rb*(2.0*x*(y+fr_d))/pow(rb,4);
+    } else {
     /* quadrupole */
     bmy = -func_bphi(rs)*x/rs
           +func_bphi(rm)*x/rm
           -fr_rmom*(func_back(rb))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rb,3);
+    }
   }
   else
   {
@@ -350,7 +362,7 @@ static Real func_rjphi(const Real r)
 {
   /*  current density */
   Real pi = 3.14159265358979;
-  Real ro, r1, r2;
+  Real r1, r2;
   Real rjphi;
   r1 = fr_ri - 0.5 * fr_del;
   r2 = fr_ri + 0.5 * fr_del;
@@ -379,6 +391,32 @@ static Real func_back(const Real r)
   rmm = 0.5 * fr_rja * (riq + 0.25 * delq - 2. * delq / piq);
   back = rmm / pow(r, 3);
   return back;
+}
+
+static Real func_tini(const Real r)
+{
+  Real pi = 3.14159265358979;
+  Real r1, r2, delta = 2.0*fr_del;
+  Real temperature;
+  //r1 = fr_ri - 0.5 * fr_del;
+  //r2 = fr_ri + 0.5 * fr_del;
+  r1 = fr_ri + 0.5*fr_del;
+  r2 = r1 + delta;
+  if (r <= r1)
+  {
+    temperature = fr_t_inner;
+  }
+  else if (r <= r2)
+  {
+    //temperature = fr_t_inner
+    //  -0.5*(fr_t_inner-fr_t_outer)*(cos((pi/fr_del)*(r - r1))+1.);
+    temperature = fr_t_inner + (r-r1)/delta*(fr_t_outer-fr_t_inner);
+  }
+  else
+  {
+    temperature = fr_t_outer;
+  }
+  return temperature;
 }
 
 //==============================================================================
@@ -497,7 +535,7 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
-        //prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/(beta0/2.0);
+        prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/(beta0/2.0);
       }
     }
   }
