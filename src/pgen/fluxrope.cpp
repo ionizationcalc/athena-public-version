@@ -129,10 +129,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   // Read input arguments
   Real gm1 = peos->GetGamma() - 1.0;
-  Real gamma = peos->GetGamma();
+  Real gamma_const = 5./3.;
   beta0 = pin->GetReal("problem","beta0");
   temperature0 = pin->GetReal("problem","temperature0");
-  Real p0 = beta0/2.0;
+  Real p0 = beta0/2.0, rho0;
 
   // Initialize the flux rope
   fr_case = pin->GetInteger("problem","fr_case");
@@ -144,7 +144,16 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   fr_t_inner = pin->GetReal("problem","fr_t_inner")/temperature0*(beta0*0.5);
   fr_t_outer = pin->GetReal("problem","fr_t_outer")/temperature0*(beta0*0.5);
   fr_rmom = fr_d * fr_d * 125. / 32. * 0.80;
-  if (fr_case == 1) fr_rmom=1.0;
+  if (fr_case == 1) {
+    fr_d = 0.0625;
+    fr_h = 0.125;
+    fr_ri = 0.05;
+    fr_del = 0.025;
+    fr_rja = 600.0;
+    fr_rmom = 1.0;
+    p0=1.0/gamma_const;
+    rho0 = 1.0;
+  }
 
   // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
@@ -167,7 +176,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
     yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
     r = sqrt(pow(xc, 2) + pow(yc-fr_h, 2));
-    p_add(j,i) = func_uphi(r);
+    p_add(j,i) = -func_uphi(r);
   }}
 
   // Initialize density, momentum, face-centered fields
@@ -177,7 +186,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
     yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
     r = sqrt(pow(xc, 2) + pow(yc-fr_h, 2));
-    phydro->u(IDN,k,j,i) = (p0 + p_add(j,i))/(beta0/2.0);
+    phydro->u(IDN,k,j,i) = rho0*pow((p0 + p_add(j,i))/p0, 1.0/gamma_const);
     phydro->u(IM1,k,j,i) = 0.0;
     phydro->u(IM2,k,j,i) = 0.0;
     phydro->u(IM3,k,j,i) = 0.0;
@@ -260,18 +269,19 @@ Real func_integ_pphi(Real r, const Real phi) {
 static Real func_bmx(const Real x, const Real y)
 {
   /*c model field x-component */
-  Real rs, rm, rb;
+  Real rs, rm, rb, r2;
   Real bmx;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
+  r2 = fr_ri + 0.5*fr_del;
   if (rs > 0.0)
   {
     if (fr_case == 1) {
     /* dipole case */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
         -func_bphi(rm)*(y+fr_h)/rm
-        -func_bphi(rb)*fr_d*fr_rmom*rb*(pow(x,2)-pow(y+fr_d, 2))/pow(rb,4);
+        -func_bphi(r2)*fr_rmom*fr_d*r2*(pow(x,2)-pow(y+fr_d, 2))/pow(rb,4);
     } else {
     /* quadrupole */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
@@ -289,18 +299,19 @@ static Real func_bmx(const Real x, const Real y)
 static Real func_bmy(const Real x, const Real y)
 {
   /*  model field z-component */
-  Real rs, rm, rb;
+  Real rs, rm, rb, r2;
   Real bmy;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
+  r2 = fr_ri + 0.5*fr_del;
   if (rs > 0.0)
   {
     if (fr_case == 1) {
     /* dipole case */
     bmy = -func_bphi(rs)*x/rs
           +func_bphi(rm)*x/rm
-          -func_bphi(rb)*fr_d*fr_rmom*rb*(2.0*x*(y+fr_d))/pow(rb,4);
+          -func_bphi(r2)*fr_rmom*fr_d*r2*(2.0*x*(y+fr_d))/pow(rb,4);
     } else {
     /* quadrupole */
     bmy = -func_bphi(rs)*x/rs
@@ -349,7 +360,7 @@ static Real func_uphi(const Real r)
   Real uphi;
   Real rend = fr_ri + fr_del;
   if (r < rend) {
-    uphi = -adaptiveSimpsons(func_integ_pphi,
+    uphi = adaptiveSimpsons(func_integ_pphi,
                             0,
                             r, rend, 1.0e-9, 1000000);
   } else {
@@ -368,7 +379,7 @@ static Real func_rjphi(const Real r)
   r2 = fr_ri + 0.5 * fr_del;
   if (r <= r1)
   {
-    rjphi = 1.0 * fr_rja;
+    rjphi = fr_rja;
   }
   else if (r <= r2)
   {
@@ -535,7 +546,7 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
-        prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/(beta0/2.0);
+        //prim(IDN,k,js-j,i) = pow(prim(IPR,k,js,i), 3./5.);
       }
     }
   }
@@ -547,16 +558,19 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         for (int i=is; i<=ie+1; ++i) {
           pbypx = func_pbypxini(pco->x1f(i), pco->x2f(j));
           b.x1f(k,(js-j),i) = b.x1f(k,(js-j+1),i) - pbypx*pco->dx2v(js-j+1);
+          //b.x1f(k,(js-j),i) = b.x1f(k,js,i);
         }
       }
     }
-    Real az_c, az_p;
+    Real az_c, az_p, xc;
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          az_c = func_azini(pco->x1f(i), pco->x2f(js-j));
-          az_p = func_azini(pco->x1f(i+1), pco->x2f(js-j));
+          az_c = func_azini(pco->x1f(i), pco->x2f(js));
+          az_p = func_azini(pco->x1f(i+1), pco->x2f(js));
           b.x2f(k,(js-j),i) = (az_c - az_p)/pco->dx1f(i);
+          //xc = 0.5*(pco->x1f(i) + pco->x1f(i+1));
+          //b.x2f(k,(js-j),i) = func_bmy(xc, pco->x2f(js));
         }
       }
     }
