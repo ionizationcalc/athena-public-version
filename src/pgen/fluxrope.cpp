@@ -151,8 +151,8 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     fr_del = 0.025;
     fr_rja = 600.0;
     fr_rmom = 1.0;
-    p0=1.0/gamma_const;
-    rho0 = 1.0;
+    p0=0.05/gamma_const;
+    rho0 = 0.05;
   }
 
   // Define the local temporary array: az & pgas
