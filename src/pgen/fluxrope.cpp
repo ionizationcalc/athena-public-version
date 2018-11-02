@@ -132,7 +132,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   Real gamma_const = 5./3.;
   beta0 = pin->GetReal("problem","beta0");
   temperature0 = pin->GetReal("problem","temperature0");
-  Real p0 = beta0/2.0, rho0;
+  Real p0 = beta0/2.0, rho0, te0;
 
   // Initialize the flux rope
   fr_case = pin->GetInteger("problem","fr_case");
@@ -145,14 +145,15 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   fr_t_outer = pin->GetReal("problem","fr_t_outer")/temperature0*(beta0*0.5);
   fr_rmom = fr_d * fr_d * 125. / 32. * 0.80;
   if (fr_case == 1) {
-    fr_d = 0.0625;
-    fr_h = 0.125;
+    fr_d = 0.125;
+    fr_h = 0.25;
     fr_ri = 0.05;
     fr_del = 0.025;
     fr_rja = 600.0;
     fr_rmom = 1.0;
-    p0=0.05/gamma_const;
-    rho0 = 0.05;
+    p0=0.1/gamma_const;
+    rho0 = 0.1;
+    te0 = p0/rho0;
   }
 
   // Define the local temporary array: az & pgas
@@ -287,6 +288,7 @@ static Real func_bmx(const Real x, const Real y)
     bmx = +func_bphi(rs)*(y-fr_h)/rs
           -func_bphi(rm)*(y+fr_h)/rm
           -fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
+    
     }
   }
   else
@@ -546,7 +548,7 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
-        //prim(IDN,k,js-j,i) = pow(prim(IPR,k,js,i), 3./5.);
+        prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/temp0;
       }
     }
   }
@@ -556,9 +558,8 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie+1; ++i) {
-          pbypx = func_pbypxini(pco->x1f(i), pco->x2f(j));
+          pbypx = func_pbypxini(pco->x1f(i), pco->x2f(js-j+1));
           b.x1f(k,(js-j),i) = b.x1f(k,(js-j+1),i) - pbypx*pco->dx2v(js-j+1);
-          //b.x1f(k,(js-j),i) = b.x1f(k,js,i);
         }
       }
     }
@@ -566,8 +567,8 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          az_c = func_azini(pco->x1f(i), pco->x2f(js));
-          az_p = func_azini(pco->x1f(i+1), pco->x2f(js));
+          az_c = func_azini(pco->x1f(i), pco->x2f(js-j));
+          az_p = func_azini(pco->x1f(i+1), pco->x2f(js-j));
           b.x2f(k,(js-j),i) = (az_c - az_p)/pco->dx1f(i);
           //xc = 0.5*(pco->x1f(i) + pco->x1f(i+1));
           //b.x2f(k,(js-j),i) = func_bmy(xc, pco->x2f(js));
@@ -588,7 +589,7 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
 
 Real func_pbypxini(Real x, Real y) {
   Real pbypx;
-  pbypx = (func_bmy(x + 1.0e-5, y)-func_bmy(x - 1.0e-5, y))/2.0e-5;
+  pbypx = (func_bmy(x + 1.0e-9, y)-func_bmy(x - 1.0e-9, y))/2.0e-9;
   return pbypx;
 }
 
