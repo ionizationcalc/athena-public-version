@@ -169,6 +169,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   }}
 
   // Initialize density, momentum, face-centered fields
+  Real xc, yc;
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie; i++) {
@@ -590,8 +591,6 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
           az_c = func_azini(pco->x1f(i), pco->x2f(js-j));
           az_p = func_azini(pco->x1f(i+1), pco->x2f(js-j));
           b.x2f(k,(js-j),i) = (az_c - az_p)/pco->dx1f(i);
-          //xc = 0.5*(pco->x1f(i) + pco->x1f(i+1));
-          //b.x2f(k,(js-j),i) = func_bmy(xc, pco->x2f(js));
         }
       }
     }
