@@ -32,6 +32,9 @@
 #endif
 
 // functions
+Real func_pini(Real x, Real y);
+Real func_teini(Real x, Real y);
+Real func_rhoini(Real x, Real y);
 Real func_azini(Real x, Real y);
 Real func_pbypxini(Real x, Real y);
 Real func_integ_bx(Real y, const Real xfix);
@@ -63,7 +66,7 @@ static Real beta0, temperature0;
 static int fr_case;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_rja;
 static Real fr_t_inner, fr_t_outer;
-
+static Real p_ambient=0.12, te_ambient=0.6, rho_ambient=0.2;
 
 // Boundary conditions
 void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
@@ -151,9 +154,6 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     fr_del = 0.025;
     fr_rja = 600.0;
     fr_rmom = 1.0;
-    p0=0.1/gamma_const;
-    rho0 = 0.1;
-    te0 = p0/rho0;
   }
 
   // Define the local temporary array: az & pgas
@@ -161,23 +161,11 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   int nx2 = (je-js)+1 + 2*(NGHOST);
   AthenaArray<Real> az;
   az.NewAthenaArray(nx2,nx1);
-  AthenaArray<Real> p_add;
-  p_add.NewAthenaArray(nx2,nx1);
 
   // Initialize vector potential
   for (int j=js; j<=je+1; ++j) {
   for (int i=is; i<=ie+1; ++i) {
     az(j,i) = func_azini(pcoord->x1f(i), pcoord->x2f(j));
-  }}
-
-  // Initialize additional pressure inside the fluxrope 
-  Real r, xc, yc;
-  for (int j=js; j<=je; ++j) {
-  for (int i=is; i<=ie; ++i) {
-    xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
-    yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
-    r = sqrt(pow(xc, 2) + pow(yc-fr_h, 2));
-    p_add(j,i) = -func_uphi(r);
   }}
 
   // Initialize density, momentum, face-centered fields
@@ -186,8 +174,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   for (int i=is; i<=ie; i++) {
     xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
     yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
-    r = sqrt(pow(xc, 2) + pow(yc-fr_h, 2));
-    phydro->u(IDN,k,j,i) = rho0*pow((p0 + p_add(j,i))/p0, 1.0/gamma_const);
+    phydro->u(IDN,k,j,i) = func_rhoini(xc, yc);
     phydro->u(IM1,k,j,i) = 0.0;
     phydro->u(IM2,k,j,i) = 0.0;
     phydro->u(IM3,k,j,i) = 0.0;
@@ -215,7 +202,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     for (int k=ks; k<=ke; k++) {
     for (int j=js; j<=je; j++) {
     for (int i=is; i<=ie; i++) {
-      phydro->u(IEN,k,j,i) = (p0 + p_add(j,i))/gm1 +
+      xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
+      yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
+      phydro->u(IEN,k,j,i) = func_pini(xc, yc)/gm1 +
           0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
                SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
                SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i)))) + (0.5)*
@@ -225,8 +214,39 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   }
 
   az.DeleteAthenaArray();
-  p_add.DeleteAthenaArray();
   return;
+}
+
+//==============================================================================
+// function: initial p, te, and rho(x, y)
+//==============================================================================
+Real func_pini(Real x, Real y) {
+  Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
+  Real p;
+  p = p_ambient - func_uphi(r);
+  return p;
+}
+
+Real func_teini(Real x, Real y) {
+  Real r, r1, r2;
+  Real t, tinner = 0.1*te_ambient, touter = te_ambient;
+  r = sqrt(x*x + (y-fr_h)*(y-fr_h));
+  r1 = fr_ri - 0.5*fr_del;
+  r2 = fr_ri + 0.5*fr_del;
+  if (r <= r1) {
+    t = tinner;
+  } else if (r <=r2) {
+    t = tinner + (touter-tinner)*te_ambient/(r2-r1)*(r-r1);
+  } else {
+    t = touter;
+  }
+  return t;
+}
+
+Real func_rhoini(Real x, Real y) {
+  Real rho;
+  rho = func_pini(x, y)/func_teini(x, y);
+  return rho;
 }
 
 //==============================================================================
@@ -548,7 +568,7 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
-        prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/temp0;
+        prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/te_ambient;
       }
     }
   }
