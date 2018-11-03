@@ -45,7 +45,6 @@ static Real func_bphi(const Real r);
 static Real func_rjphi(const Real r);
 static Real func_uphi(const Real r);
 static Real func_back(const Real r);
-static Real func_tini(const Real r);
 static Real func_bmx(const Real x1, const Real x2);
 static Real func_bmy(const Real x1, const Real x2);
 
@@ -66,13 +65,16 @@ static Real beta0, temperature0;
 static int fr_case;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_rja;
 static Real fr_t_inner, fr_t_outer;
-static Real p_ambient=0.12, te_ambient=0.6, rho_ambient=0.2;
+static Real p_ambient=0.1, te_ambient=0.6, rho_ambient=0.1;
 
 // Boundary conditions
 void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
                 FaceField &b, Real time, Real dt, 
                 int is, int ie, int js, int je, int ks, int ke, int ngh);
-void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                FaceField &b, Real time, Real dt,
+                int is, int ie, int js, int je, int ks, int ke, int ngh);
+void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
                     FaceField &b, Real time, Real dt,
                     int is, int ie, int js, int je, int ks, int ke, int ngh);
 void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
@@ -85,12 +87,12 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
 //  be used to initialize variables which are global to (and therefore can be 
 //  passed to) other functions in this file.  Called in Mesh constructor.
 //==============================================================================
-
 void Mesh::InitUserMeshData(ParameterInput *pin) {
   // Enroll boundary value function pointers
-  //EnrollUserBoundaryFunction(INNER_X1, SymmInnerX1);
-  EnrollUserBoundaryFunction(INNER_X2, LinetiedInnerX2);
-  //EnrollUserBoundaryFunction(OUTER_X2, OpenOuterX2);
+  EnrollUserBoundaryFunction(INNER_X1, SymmInnerX1);
+  EnrollUserBoundaryFunction(OUTER_X1, OpenOuterX1);
+  EnrollUserBoundaryFunction(INNER_X2, LintInnerX2);
+  EnrollUserBoundaryFunction(OUTER_X2, OpenOuterX2);
   return;
 }
 
@@ -150,8 +152,8 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   if (fr_case == 1) {
     fr_d = 0.125;
     fr_h = 0.25;
-    fr_ri = 0.05;
-    fr_del = 0.025;
+    fr_ri = 0.055;
+    fr_del = 0.1;
     fr_rja = 600.0;
     fr_rmom = 1.0;
   }
@@ -229,11 +231,14 @@ Real func_pini(Real x, Real y) {
 }
 
 Real func_teini(Real x, Real y) {
+  Real pi = 3.14159265358979;
   Real r, r1, r2;
-  Real t, tinner = 0.1*te_ambient, touter = te_ambient;
+  Real t, tinner = 0.5*te_ambient, touter = te_ambient;
   r = sqrt(x*x + (y-fr_h)*(y-fr_h));
+  /*
+  // Here r1 for Te is slightly larger then the current J distribution.  
   r1 = fr_ri - 0.5*fr_del;
-  r2 = fr_ri + 0.5*fr_del;
+  r2 = r2 + fr_del;
   if (r <= r1) {
     t = tinner;
   } else if (r <=r2) {
@@ -241,6 +246,16 @@ Real func_teini(Real x, Real y) {
   } else {
     t = touter;
   }
+  */
+  
+  /* case 2*/
+  r2 = fr_ri + 0.5*fr_del;
+  if (r >= r2) {
+    t = touter;
+  } else {
+    t = tinner + 0.5*(touter-tinner)*(1.0-cos(pi*r/r2));
+  }
+
   return t;
 }
 
@@ -427,32 +442,6 @@ static Real func_back(const Real r)
   return back;
 }
 
-static Real func_tini(const Real r)
-{
-  Real pi = 3.14159265358979;
-  Real r1, r2, delta = 2.0*fr_del;
-  Real temperature;
-  //r1 = fr_ri - 0.5 * fr_del;
-  //r2 = fr_ri + 0.5 * fr_del;
-  r1 = fr_ri + 0.5*fr_del;
-  r2 = r1 + delta;
-  if (r <= r1)
-  {
-    temperature = fr_t_inner;
-  }
-  else if (r <= r2)
-  {
-    //temperature = fr_t_inner
-    //  -0.5*(fr_t_inner-fr_t_outer)*(cos((pi/fr_del)*(r - r1))+1.);
-    temperature = fr_t_inner + (r-r1)/delta*(fr_t_outer-fr_t_inner);
-  }
-  else
-  {
-    temperature = fr_t_outer;
-  }
-  return temperature;
-}
-
 //==============================================================================
 // Adaptive Simpson's Rule
 //==============================================================================
@@ -547,9 +536,65 @@ void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
 }
 
 //==============================================================================
-// LinetiedInnerX2 boundary condition
+// Open boudnary condition at the right edge
 //==============================================================================
-void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
+//! \fn void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+//                         FaceField &b, Real time, Real dt,
+//                         int is, int ie, int js, int je, int ks, int ke, int ngh)
+//  \brief Open boundary conditions, outer x1 boundary
+
+void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                    FaceField &b, Real time, Real dt,
+                    int is, int ie, int js, int je, int ks, int ke, int ngh) {
+  // copy hydro variables into ghost zones
+  for (int n=0; n<(NHYDRO); ++n) {
+    for (int k=ks; k<=ke; ++k) {
+    for (int j=js; j<=je; ++j) {
+      for (int i=1; i<=ngh; ++i) {
+        prim(n,k,j,ie+i) = prim(n,k,j,ie);
+      }
+    }}
+  }
+
+  // copy face-centered magnetic fields into ghost zones
+  if (MAGNETIC_FIELDS_ENABLED) {
+    for (int k=ks; k<=ke; ++k) {
+    for (int j=js; j<=je+1; ++j) {
+      for (int i=1; i<=ngh; ++i) {
+        b.x2f(k,j,(ie+i)) = 2.0*b.x2f(k,j,(ie+i-1))-b.x2f(k,j,(ie+i-2));
+      }
+    }}
+
+    for (int k=ks; k<=ke; ++k) {
+    for (int j=js; j<=je; ++j) {
+      for (int i=1; i<=ngh; ++i) {
+        //b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+i))
+        //-(pco->dx1v(ie+i)/pco->dx2v(j))
+        //*(b.x2f(k,(j+1),(ie+i)) - b.x2f(k,j,(ie+i)));
+        b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+1));
+      }
+    }}
+
+    for (int k=ks; k<=ke+1; ++k) {
+    for (int j=js; j<=je; ++j) {
+      for (int i=1; i<=ngh; ++i) {
+        b.x3f(k,j,(ie+i)) = b.x3f(k,j,ie);
+      }
+    }}
+  }
+
+  return;
+}
+
+//==============================================================================
+// LintInnerX2 boundary condition
+//==============================================================================
+//! \fn void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+//                       FaceField &b, Real time, Real dt,
+//                       int is, int ie, int js, int je, int ks, int ke, int ngh)
+//  \brief Linetied boundary conditions at the bottom.
+
+void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
                     FaceField &b, Real time, Real dt, 
                     int is, int ie, int js, int je, int ks, int ke, int ngh) {
   // (a) First extroplate all primary values
@@ -642,8 +687,9 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
-          -pco->dx2v(je+j)/pco->dx1v(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
+          //b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
+          //-pco->dx2v(je+j)/pco->dx1v(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
+          b.x2f(k,(je+j+1),i) = b.x2f(k,(je+1),i);
         }
       }
     }
