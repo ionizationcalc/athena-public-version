@@ -150,11 +150,11 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   fr_t_outer = pin->GetReal("problem","fr_t_outer")/temperature0*(beta0*0.5);
   fr_rmom = fr_d * fr_d * 125. / 32. * 0.80;
   if (fr_case == 1) {
-    fr_d = 0.125;
+    fr_d = 0.0625;
     fr_h = 0.25;
-    fr_ri = 0.055;
-    fr_del = 0.1;
-    fr_rja = 600.0;
+    fr_ri = 0.02;
+    fr_del = 0.01;
+    fr_rja = 2000.0;
     fr_rmom = 1.0;
   }
 
@@ -233,27 +233,22 @@ Real func_pini(Real x, Real y) {
 Real func_teini(Real x, Real y) {
   Real pi = 3.14159265358979;
   Real r, r1, r2;
-  Real t, tinner = 0.5*te_ambient, touter = te_ambient;
-  r = sqrt(x*x + (y-fr_h)*(y-fr_h));
-  /*
-  // Here r1 for Te is slightly larger then the current J distribution.  
-  r1 = fr_ri - 0.5*fr_del;
-  r2 = r2 + fr_del;
-  if (r <= r1) {
-    t = tinner;
-  } else if (r <=r2) {
-    t = tinner + (touter-tinner)*te_ambient/(r2-r1)*(r-r1);
-  } else {
-    t = touter;
-  }
-  */
-  
-  /* case 2*/
+  Real t, tinner = te_ambient/200.0, touter = te_ambient;
+  r = sqrt(x*x + (y-fr_h)*(y-fr_h));  
+  /* case 2 
   r2 = fr_ri + 0.5*fr_del;
   if (r >= r2) {
     t = touter;
   } else {
     t = tinner + 0.5*(touter-tinner)*(1.0-cos(pi*r/r2));
+  } */
+
+  /* case 3 */
+  r2 = 0.07;
+  if (fabs(r - r2) <= 0.03) {
+    t = tinner;
+  } else {
+    t = touter;
   }
 
   return t;
@@ -568,10 +563,9 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=1; i<=ngh; ++i) {
-        //b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+i))
-        //-(pco->dx1v(ie+i)/pco->dx2v(j))
-        //*(b.x2f(k,(j+1),(ie+i)) - b.x2f(k,j,(ie+i)));
-        b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+1));
+        b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+i))
+        -(pco->dx1f(ie+i)/pco->dx2f(j))
+        *(b.x2f(k,(j+1),(ie+i)) - b.x2f(k,j,(ie+i)));
       }
     }}
 
@@ -614,7 +608,7 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
-        prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/te_ambient;
+        prim(IDN,k,js-j,i) = pow(prim(IPR,k,js,i), 3./5.);
       }
     }
   }
@@ -625,7 +619,8 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie+1; ++i) {
           pbypx = func_pbypxini(pco->x1f(i), pco->x2f(js-j+1));
-          b.x1f(k,(js-j),i) = b.x1f(k,(js-j+1),i) - pbypx*pco->dx2v(js-j+1);
+          b.x1f(k,(js-j),i) = b.x1f(k,(js-j+1),i)
+            - pbypx*pco->dx2v(js-j+1);
         }
       }
     }
@@ -687,9 +682,8 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          //b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
-          //-pco->dx2v(je+j)/pco->dx1v(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
-          b.x2f(k,(je+j+1),i) = b.x2f(k,(je+1),i);
+          b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
+          -pco->dx2f(je+j)/pco->dx1f(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
         }
       }
     }
