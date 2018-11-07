@@ -36,6 +36,7 @@ Real func_pini(Real x, Real y);
 Real func_teini(Real x, Real y);
 Real func_rhoini(Real x, Real y);
 Real func_azini(Real x, Real y);
+Real func_bzini(Real x, Real y);
 Real func_pbypxini(Real x, Real y);
 Real func_integ_bx(Real y, const Real xfix);
 Real func_integ_by(Real x, const Real yfix);
@@ -61,11 +62,9 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
                           double fa, double fb, double fc, int bottom);
 
 // Global parameters to define the initial fluxrope
-static Real beta0, temperature0;
+static Real gamma_const = 5./3.;
 static int fr_case;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_rja;
-static Real fr_t_inner, fr_t_outer;
-static Real p_ambient=0.1, te_ambient=0.6, rho_ambient=0.1;
 
 // Boundary conditions
 void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
@@ -106,6 +105,25 @@ void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
 }
 
 //==============================================================================
+//! \fn void MeshBlock::UserWorkInLoop(void)
+//==============================================================================
+// This function is called at the end of every timestep 
+// (note: it is not called at the half timestep). 
+void MeshBlock::UserWorkInLoop(void) {
+  // (1) remove velocity vz components
+  for(int k=ks; k<=ke; k++) {
+    for(int j=js; j<=je; j++) {
+      for(int i=is; i<=ie; i++) {
+        //phydro->u(IEN,k,j,i) = phydro->u(IEN,k,j,i)
+        //  -0.5*SQR(phydro->u(IM3,k,j,i))/phydro->u(IDN,k,j,i);
+        //phydro->u(IM3,k,j,i) = 0.0;
+      }
+    }
+  }
+  return;
+}
+
+//==============================================================================
 //! \fn void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin)
 //  \brief Function to define user outputs.
 //==============================================================================
@@ -134,21 +152,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   // Read input arguments
   Real gm1 = peos->GetGamma() - 1.0;
-  Real gamma_const = 5./3.;
-  beta0 = pin->GetReal("problem","beta0");
-  temperature0 = pin->GetReal("problem","temperature0");
-  Real p0 = beta0/2.0, rho0, te0;
+  
 
   // Initialize the flux rope
   fr_case = pin->GetInteger("problem","fr_case");
-  fr_d  = pin->GetReal("problem","fr_d");
-  fr_h  = pin->GetReal("problem","fr_h");
-  fr_ri = pin->GetReal("problem","fr_ri");
-  fr_del = pin->GetReal("problem","fr_del");
-  fr_rja = pin->GetReal("problem","fr_rja");
-  fr_t_inner = pin->GetReal("problem","fr_t_inner")/temperature0*(beta0*0.5);
-  fr_t_outer = pin->GetReal("problem","fr_t_outer")/temperature0*(beta0*0.5);
-  fr_rmom = fr_d * fr_d * 125. / 32. * 0.80;
   if (fr_case == 1) {
     fr_d = 0.0625;
     fr_h = 0.25;
@@ -156,6 +163,15 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     fr_del = 0.01;
     fr_rja = 2000.0;
     fr_rmom = 1.0;
+  } else if (fr_case == 2) {
+    fr_d  = pin->GetReal("problem","fr_d");
+    fr_h = 0.75*fr_d;
+    fr_ri = 0.15*fr_d;
+    fr_del = 0.0;
+    fr_rja = 300.0;
+    fr_rmom = fr_d * fr_d * 125. / 32. * 0.80;
+  } else {
+    printf("Error: define fluxrope.");
   }
 
   // Define the local temporary array: az & pgas
@@ -187,17 +203,23 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie+1; i++) {
-    pfield->b.x1f(k,j,i) = (az(j+1,i) - az(j,i))/pcoord->dx2f(j);
+    //pfield->b.x1f(k,j,i) = (az(j+1,i) - az(j,i))/pcoord->dx2f(j);
+    yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
+    pfield->b.x1f(k,j,i) = func_bmx(pcoord->x1f(i), yc);
   }}}
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je+1; j++) {
   for (int i=is; i<=ie; i++) {
-    pfield->b.x2f(k,j,i) = (az(j,i) - az(j,i+1))/pcoord->dx1f(i);
+    //pfield->b.x2f(k,j,i) = (az(j,i) - az(j,i+1))/pcoord->dx1f(i);
+    xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
+    pfield->b.x2f(k,j,i) = func_bmy(xc, pcoord->x2f(j));
   }}}
   for (int k=ks; k<=ke+1; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie; i++) {
-    pfield->b.x3f(k,j,i) = 0;
+    xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
+    yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
+    pfield->b.x3f(k,j,i) = func_bzini(xc, yc);
   }}}
 
   // initialize total energy
@@ -226,37 +248,42 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 Real func_pini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real p;
-  p = p_ambient - func_uphi(r);
+  p = 1.0/gamma_const;
   return p;
 }
 
 Real func_teini(Real x, Real y) {
-  Real pi = 3.14159265358979;
-  Real r, r1, r2;
-  Real t, tinner = te_ambient/200.0, touter = te_ambient;
-  r = sqrt(x*x + (y-fr_h)*(y-fr_h));  
-  /* case 2 
-  r2 = fr_ri + 0.5*fr_del;
-  if (r >= r2) {
-    t = touter;
-  } else {
-    t = tinner + 0.5*(touter-tinner)*(1.0-cos(pi*r/r2));
-  } */
-
-  /* case 3 */
-  r2 = 0.07;
-  if (fabs(r - r2) <= 0.03) {
-    t = tinner;
-  } else {
-    t = touter;
-  }
-
-  return t;
+  Real te;
+  te = 1.0/gamma_const;
+  return te;
 }
 
 Real func_rhoini(Real x, Real y) {
-  Real rho;
-  rho = func_pini(x, y)/func_teini(x, y);
+  Real rho, p, te;
+  // Get gas pressure and temperature
+  p = func_pini(x, y);
+  te = func_teini(x, y);
+
+  /* Add a dense (low temperature) fluxrope core
+  Real pi = 3.14159265358979;
+  Real r, r1, r2, r_edge;
+  Real t_inner, t_outer;
+  t_outer = te;
+  t_inner = t_outer*1.0e-2;
+  r1 = fr_ri - 0.5*fr_del;
+  r_edge = fr_del;
+  r = sqrt(x*x + pow(y-fr_h,2)); 
+  if (r <= r1) {
+    te = t_inner;
+  } else if (r <= r1 + r_edge) {
+    te = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*(r-r1)/r_edge));
+  } else {
+    te = te;
+  }
+  */
+
+  // Get non-dimensional density
+  rho = p/te;
   return rho;
 }
 
@@ -278,6 +305,18 @@ Real func_azini(Real x, Real y) {
 
   az_out = Ixx + Iyy;
   return az_out;
+}
+
+//==============================================================================
+// function: initial bz(x, y)
+//==============================================================================
+Real func_bzini(Real x, Real y) {
+  Real bz, p_fluxrope;
+  Real r;
+  r = sqrt(x*x + (y-fr_h)*(y-fr_h));
+  p_fluxrope = -func_uphi(r);
+  bz = sqrt(2.0*p_fluxrope);
+  return bz;
 }
 
 //==============================================================================
@@ -307,8 +346,7 @@ static Real func_bmx(const Real x, const Real y)
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
   r2 = fr_ri + 0.5*fr_del;
-  if (rs > 0.0)
-  {
+  if (rs > 0.0) {
     if (fr_case == 1) {
     /* dipole case */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
@@ -321,9 +359,7 @@ static Real func_bmx(const Real x, const Real y)
           -fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
     
     }
-  }
-  else
-  {
+  } else {
     bmx = 0.0;
   }
   return bmx;
@@ -338,8 +374,7 @@ static Real func_bmy(const Real x, const Real y)
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
   r2 = fr_ri + 0.5*fr_del;
-  if (rs > 0.0)
-  {
+  if (rs > 0.0) {
     if (fr_case == 1) {
     /* dipole case */
     bmy = -func_bphi(rs)*x/rs
@@ -351,9 +386,7 @@ static Real func_bmy(const Real x, const Real y)
           +func_bphi(rm)*x/rm
           -fr_rmom*(func_back(rb))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rb,3);
     }
-  }
-  else
-  {
+  } else {
     bmy = 0.0;
   }
   return bmy;
@@ -370,19 +403,14 @@ static Real func_bphi(const Real r)
   riq = fr_ri * fr_ri;
   delq = fr_del * fr_del;
   piq = pi * pi;
-  if (r <= r1)
-  {
+  if (r <= r1) {
     bphi = -0.5 * fr_rja * r;
-  }
-  else if (r <= r2)
-  {
+  } else if (r <= r2) {
     t1 = 0.5 * r1 * r1 - delq / piq + 0.5 * r * r;
     t2 = (fr_del * r / pi) * sin((pi / fr_del) * (r - r1));
     t3 = (delq / piq) * cos((pi / fr_del) * (r - r1));
     bphi = -0.5 * fr_rja * (t1 + t2 + t3) / r;
-  }
-  else
-  {
+  } else {
     bphi = -0.5 * fr_rja * (riq + 0.25 * delq - 2. * delq / piq) / r;
   }
   return bphi;
@@ -410,16 +438,11 @@ static Real func_rjphi(const Real r)
   Real rjphi;
   r1 = fr_ri - 0.5 * fr_del;
   r2 = fr_ri + 0.5 * fr_del;
-  if (r <= r1)
-  {
+  if (r <= r1) {
     rjphi = fr_rja;
-  }
-  else if (r <= r2)
-  {
+  } else if (r <= r2) {
     rjphi = 0.5 * fr_rja * (cos((pi / fr_del) * (r - r1)) + 1.);
-  }
-  else
-  {
+  } else {
     rjphi = 0.;
   }
   return rjphi;
