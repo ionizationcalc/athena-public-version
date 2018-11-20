@@ -97,9 +97,6 @@ void MeshBlock::UserWorkInLoop(void) {
   for(int k=ks; k<=ke; k++) {
     for(int j=js; j<=je; j++) {
       for(int i=is; i<=ie; i++) {
-        //phydro->u(IEN,k,j,i) = phydro->u(IEN,k,j,i)
-        //  -0.5*SQR(phydro->u(IM3,k,j,i))/phydro->u(IDN,k,j,i);
-        //phydro->u(IM3,k,j,i) = 0.0;
       }
     }
   }
@@ -139,10 +136,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   // Initialize the flux rope
   fr_d = 0.0625;
-  fr_h = 0.25;
-  fr_ri = 0.02;
-  fr_del = 0.01;
-  fr_rja = 600.0;
+  fr_h = 0.15;
+  fr_ri = 0.01;
+  fr_del = 0.0;
+  fr_rja = 6000.0;
 
   // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
@@ -238,10 +235,9 @@ Real func_rhoini(Real x, Real y) {
   /* Add a dense (low temperature) fluxrope core
   Real pi = 3.14159265358979;
   Real r, r1, r2, r_edge;
-  Real te_fluxrope = 1.0e4;
   Real t_inner, t_outer;
   t_outer = te;
-  t_inner = t_outer*1.0e-1;
+  t_inner = t_outer*1.0e-2;
   r1 = fr_ri - 0.5*fr_del;
   r_edge = fr_del;
   r = sqrt(x*x + pow(y-fr_h,2)); 
@@ -287,6 +283,7 @@ Real func_bzini(Real x, Real y) {
   r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   p_fluxrope = -func_uphi(r);
   bz = sqrt(2.0*p_fluxrope);
+  bz = 0;
   return bz;
 }
 
@@ -315,8 +312,7 @@ static Real func_bmx(const Real x, const Real y) {
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   if (rs > 0.0) {
-    bmx = +func_bphi(rs)*(y-fr_h)/rs
-        -func_bphi(rm)*(y+fr_h)/rm;
+    bmx = +func_bphi(rs)*(y-fr_h)/rs - func_bphi(rm)*(y+fr_h)/rm;
   } else {
     bmx = 0.0;
   }
@@ -330,8 +326,7 @@ static Real func_bmy(const Real x, const Real y) {
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   if (rs > 0.0) {
-    bmy = -func_bphi(rs)*x/rs
-          +func_bphi(rm)*x/rm;
+    bmy = -func_bphi(rs)*x/rs + func_bphi(rm)*x/rm;
   } else {
     bmy = 0.0;
   }
