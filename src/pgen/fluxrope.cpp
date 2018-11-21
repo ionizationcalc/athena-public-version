@@ -627,6 +627,7 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
+        prim(IND,k,js-j,i) = 10.0;
       }
     }
   }
