@@ -164,10 +164,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     fr_rmom = 1.0;
   } else if (fr_case == 2) {
     fr_d  = pin->GetReal("problem","fr_d");
-    fr_h = 1.25*fr_d;
+    fr_h = 0.61*fr_d;
     fr_ri = 0.15*fr_d;
     fr_del = 0.0;
-    fr_rja = 3000.0;
+    fr_rja = 600.0;
     fr_rmom = fr_d*fr_d*125./32.* 0.80;
   } else {
     printf("Error: define fluxrope.");
@@ -247,13 +247,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 Real func_pini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real p;
-  p = 10.0/gamma_const;
+  p = 1.0/gamma_const;
   return p;
 }
 
 Real func_teini(Real x, Real y) {
   Real te;
-  te = 0.5/gamma_const;
+  te = 1.0/gamma_const;
   return te;
 }
 
@@ -631,7 +631,6 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
-        prim(IDN,k,js-j,i) = pow(prim(IPR,k,js-j,i), 3./5.);
       }
     }
   }
@@ -671,7 +670,7 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
 
 Real func_pbypxini(Real x, Real y) {
   Real pbypx;
-  pbypx = (func_bmy(x + 1.0e-9, y)-func_bmy(x - 1.0e-9, y))/2.0e-9;
+  pbypx = (func_bmy(x + 1.0e-5, y)-func_bmy(x - 1.0e-5, y))/2.0e-5;
   return pbypx;
 }
 
