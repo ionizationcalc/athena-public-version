@@ -64,7 +64,6 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
 // Global parameters to define the initial fluxrope
 static Real gamma_const = 5./3.;
 static int fr_case;
-static Real p_ambient, t_ambient;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_rja;
 
 // Boundary conditions
@@ -156,8 +155,6 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   
   // Initialize the flux rope
   fr_case = pin->GetInteger("problem","fr_case");
-  p_ambient = pin->GetReal("problem","p_ambient");
-  t_ambient = pin->GetReal("problem","t_ambient");
   if (fr_case == 1) {
     fr_d = 0.0625;
     fr_h = 0.25;
@@ -168,11 +165,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   } else if (fr_case == 2) {
     fr_d  = pin->GetReal("problem","fr_d");
     fr_h = 0.61*fr_d;
-
     fr_ri = 0.15*fr_d;
     fr_del = 0.0;
     fr_rja = 600.0;
-    fr_rmom = fr_d*fr_d*125./32.* 0.80;
+    fr_rmom = fr_d*fr_d*125./32.* 0.78;
   } else {
     printf("Error: define fluxrope.");
   }
@@ -206,16 +202,12 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie+1; i++) {
-    //pfield->b.x1f(k,j,i) = (az(j+1,i) - az(j,i))/pcoord->dx2f(j);
-    yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
-    pfield->b.x1f(k,j,i) = func_bmx(pcoord->x1f(i), yc);
+    pfield->b.x1f(k,j,i) = (az(j+1,i) - az(j,i))/pcoord->dx2f(j);
   }}}
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je+1; j++) {
   for (int i=is; i<=ie; i++) {
-    //pfield->b.x2f(k,j,i) = (az(j,i) - az(j,i+1))/pcoord->dx1f(i);
-    xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
-    pfield->b.x2f(k,j,i) = func_bmy(xc, pcoord->x2f(j));
+    pfield->b.x2f(k,j,i) = (az(j,i) - az(j,i+1))/pcoord->dx1f(i);
   }}}
   for (int k=ks; k<=ke+1; k++) {
   for (int j=js; j<=je; j++) {
@@ -251,7 +243,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 Real func_pini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real p;
-  p = 1.0/gamma_const;
+  p = 0.1/gamma_const;
   return p;
 }
 
@@ -267,7 +259,7 @@ Real func_rhoini(Real x, Real y) {
   p = func_pini(x, y);
   te = func_teini(x, y);
 
-  /* Add a dense (low temperature) fluxrope core 
+  /* Add a dense (low temperature) fluxrope core */
   Real pi = 3.14159265358979;
   Real r, r1, r2, r_edge;
   Real t_inner, t_outer;
@@ -283,7 +275,7 @@ Real func_rhoini(Real x, Real y) {
     te = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*(r-r2)/r_edge));
   } else {
     te = te;
-  } */
+  }
 
   // Get non-dimensional density
   rho = p/te;
@@ -628,6 +620,7 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     }
   }
   // (b) Set velocity and density
+  Real xc, yc;
   for (int k=ks; k<=ke; ++k) {
     for (int j=1; j<=ngh; ++j) {
       for (int i=is; i<=ie; ++i) {
@@ -663,7 +656,7 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke+1; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          b.x3f(k,(js-j),i) = b.x3f(k,js,i);
+          b.x3f(k,(js-j),i) = b.x3f(k,js+j-1,i);
         }
       } 
     }
