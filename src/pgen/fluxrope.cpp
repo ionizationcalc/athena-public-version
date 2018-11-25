@@ -142,6 +142,8 @@ void MeshBlock::UserWorkInLoop(void) {
       }
     }
   }
+  // (2) Low beta limit
+
   return;
 }
 
