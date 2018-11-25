@@ -242,10 +242,10 @@ Real func_pini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real p, p_ambient = 0.6*scale_bgdens;
   // No Bz
-  //p = p_ambient - func_uphi(r);
+  p = p_ambient - func_uphi(r);
 
   // with Bz
-  p = p_ambient;
+  //p = p_ambient;
   return p;
 }
 
@@ -272,10 +272,11 @@ Real func_teini(Real x, Real y) {
 
 Real func_rhoini(Real x, Real y) {
   Real rho;
+  Real p_ambient = 0.6*scale_bgdens;
   Real rho_ambient = 1.0*scale_bgdens;
   //rho = func_pini(x, y)/func_teini(x, y);
   // adiabatic
-  rho = rho_ambient*pow(func_pini(x, y)/0.6, 0.6);
+  rho = rho_ambient*pow(func_pini(x, y)/p_ambient, 0.6);
 
   // Add a dense bottom
   Real h = 0.04;
@@ -288,10 +289,10 @@ Real func_rhoini(Real x, Real y) {
   t_bott = t1 * tanh((y - h) / w) + t2;
   rho = rho/t_bott;
 
-  // Add a dense rope center
+  /* Add a dense rope center */
   Real pi = 3.14159265358979;
   Real r, r2, t_rope, t_outer, t_inner;
-  r2 = fr_ri + 0.5*fr_del;
+  r2 = 0.2;
   r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   t_outer = 1.0; // This is a scaled T, not the non-dimensional T.
   t_inner = 0.025*t_outer;
@@ -301,7 +302,7 @@ Real func_rhoini(Real x, Real y) {
     t_rope = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*r/r2));
   }
   rho = rho/t_rope;
-
+  
   return rho;
 }
 
@@ -328,7 +329,8 @@ Real func_azini(Real x, Real y) {
 Real func_bzini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real bz;
-  bz = sqrt(2.0*(-func_uphi(r)));
+  //bz = sqrt(2.0*(-func_uphi(r)));
+  bz = 0;
   return bz;
 }
 
