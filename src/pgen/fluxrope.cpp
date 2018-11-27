@@ -66,6 +66,7 @@ static Real beta0, temperature0;
 static int fr_case;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_sigma, fr_rja;
 static Real fr_t_inner, fr_t_outer;
+static Real beta_min = 0.05;
 static Real scale_bgdens;
 
 // Boundary conditions
@@ -142,7 +143,6 @@ void MeshBlock::UserWorkInLoop(void) {
       }
     }
   }
-  // (2) Low beta limit
 
   return;
 }
@@ -243,32 +243,31 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 Real func_pini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real p, p_ambient = 0.6*scale_bgdens;
-  // No Bz
-  p = p_ambient - func_uphi(r);
+  Real r2 = fr_ri + 0.5*fr_del;
+  Real pmag_r2, pgas_r2, pmag_c;
+  pmag_r2 = 0.5*SQR(func_bphi(r2));
+  pgas_r2 = pmag_r2*beta_min;
+  pmag_c = 0.5*SQR(func_bphi(r));
 
-  // with Bz
-  //p = p_ambient;
+  // close to the fluxrope
+  if (r <= r2) {
+    p = pgas_r2;
+  } else {
+    p = pmag_c*beta_min;
+  }
+
+  // ambient regions
+  if (p <= p_ambient) {
+    p = p_ambient;
+  }
   return p;
 }
 
 Real func_teini(Real x, Real y) {
-  Real pi = 3.14159265358979;
-  Real r, r1, r2;
-  Real te_ambient = 0.6;
-  Real t, tinner = 0.025*te_ambient, touter = te_ambient;
-  r = sqrt(x*x + (y-fr_h)*(y-fr_h));
-  /*
-  // Here r1 for Te is slightly larger then the current J distribution.  
-  r1 = fr_ri - 0.5*fr_del;
-  r2 = r2 + fr_del;
-  if (r <= r1) {
-    t = tinner;
-  } else if (r <=r2) {
-    t = tinner + (touter-tinner)*te_ambient/(r2-r1)*(r-r1);
-  } else {
-    t = touter;
-  }
-  */
+  Real t;
+  Real p_ambient = 0.6*scale_bgdens;
+  Real rho_ambient = 1.0*scale_bgdens;
+  t  = p_ambient/rho_ambient;
   return t;
 }
 
@@ -276,9 +275,12 @@ Real func_rhoini(Real x, Real y) {
   Real rho;
   Real p_ambient = 0.6*scale_bgdens;
   Real rho_ambient = 1.0*scale_bgdens;
-  //rho = func_pini(x, y)/func_teini(x, y);
+  
+  // isothermal
+  rho = func_pini(x, y)/func_teini(x, y);
+
   // adiabatic
-  rho = rho_ambient*pow(func_pini(x, y)/p_ambient, 0.6);
+  // rho = rho_ambient*pow(func_pini(x, y)/p_ambient, 0.6);
 
   // Add a dense bottom
   Real h = 0.04;
@@ -294,7 +296,7 @@ Real func_rhoini(Real x, Real y) {
   /* Add a dense rope center */
   Real pi = 3.14159265358979;
   Real r, r2, t_rope, t_outer, t_inner;
-  r2 = 0.2;
+  r2 = fr_ri + fr_del;
   r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   t_outer = 1.0; // This is a scaled T, not the non-dimensional T.
   t_inner = 0.025*t_outer;
@@ -304,7 +306,7 @@ Real func_rhoini(Real x, Real y) {
     t_rope = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*r/r2));
   }
   rho = rho/t_rope;
-  
+
   return rho;
 }
 
@@ -328,11 +330,30 @@ Real func_azini(Real x, Real y) {
   return az_out;
 }
 
+//==============================================================================
+// function: initial bz(x, y)
+//==============================================================================
 Real func_bzini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
-  Real bz;
-  //bz = sqrt(2.0*(-func_uphi(r)));
-  bz = 0;
+  Real r2 = fr_ri + 0.5*fr_del;
+  Real bz, p_fluxrope;
+  Real pmag_r2, pgas_r2;
+  Real p_ambient = 0.6*scale_bgdens;
+
+  if (r <= r2) {
+    // inside the fluxrope
+    p_fluxrope = -func_uphi(r);
+    bz = sqrt(2.0*p_fluxrope);
+  } else {
+    // outside the fluxrope
+    pmag_r2 = 0.5*SQR(func_bphi(r2));
+    pgas_r2 = pmag_r2*beta_min;
+    if (pgas_r2 >= p_ambient) {
+      bz = sqrt(2.0*(pgas_r2 - func_pini(x, y)));
+    } else {
+      bz = 0;
+    }
+  }
   return bz;
 }
 
