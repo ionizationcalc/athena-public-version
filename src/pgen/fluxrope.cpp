@@ -62,12 +62,9 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
                           double fa, double fb, double fc, int bottom);
 
 // Global parameters to define the initial fluxrope
-static Real beta0, temperature0;
-static int fr_case;
+static int fr_case, sw_frbz;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_sigma, fr_rja;
-static Real fr_t_inner, fr_t_outer;
-static Real beta_min = 0.05;
-static Real scale_bgdens;
+static Real beta_min, scale_bgdens;
 
 // Boundary conditions
 void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
@@ -171,7 +168,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   } else {
     fr_rmom = pin->GetReal("problem","fr_rmom");
   }
+  sw_frbz = pin->GetOrAddInteger("problem","sw_frbz",0);
   scale_bgdens = pin->GetReal("problem","scale_bgdens");
+  beta_min = pin->GetReal("problem","beta_min");
 
   // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
@@ -251,7 +250,11 @@ Real func_pini(Real x, Real y) {
 
   // close to the fluxrope
   if (r <= r2) {
-    p = pgas_r2;
+    if (sw_frbz == 1) {
+      p = pgas_r2;
+    } else {
+      p = pgas_r2 - func_uphi(r);
+    }
   } else {
     p = pmag_c*beta_min;
   }
@@ -342,8 +345,12 @@ Real func_bzini(Real x, Real y) {
 
   if (r <= r2) {
     // inside the fluxrope
-    p_fluxrope = -func_uphi(r);
-    bz = sqrt(2.0*p_fluxrope);
+    if (sw_frbz == 1) {
+      p_fluxrope = -func_uphi(r);
+      bz = sqrt(2.0*p_fluxrope);
+    } else {
+      bz = 0;
+    }
   } else {
     // outside the fluxrope
     pmag_r2 = 0.5*SQR(func_bphi(r2));
@@ -621,11 +628,23 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
   // copy hydro variables into ghost zones
   for (int n=0; n<(NHYDRO); ++n) {
     for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          prim(n,k,j,ie+i) = prim(n,k,j,ie);
+        }
+      }
+    }
+  }
+
+  // inflow restriction
+  for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=1; i<=ngh; ++i) {
-        prim(n,k,j,ie+i) = prim(n,k,j,ie);
+        if (prim(IVX,k,j,ie+i) < 0.0) {
+          prim(IVX,k,j,ie+i) = 0.0;
+        }
       }
-    }}
+    }
   }
 
   // copy face-centered magnetic fields into ghost zones
@@ -640,17 +659,16 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=1; i<=ngh; ++i) {
-        //b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+i))
-        //-(pco->dx1v(ie+i)/pco->dx2v(j))
-        //*(b.x2f(k,(j+1),(ie+i)) - b.x2f(k,j,(ie+i)));
-        b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+1));
+        b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+i))
+        -(pco->dx1f(ie+i)/pco->dx2f(j))
+        *(b.x2f(k,(j+1),(ie+i)) - b.x2f(k,j,(ie+i)));
       }
     }}
 
     for (int k=ks; k<=ke+1; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=1; i<=ngh; ++i) {
-        b.x3f(k,j,(ie+i)) = b.x3f(k,j,ie);
+        b.x3f(k,j,(ie+i)) = 2.0*b.x3f(k,j,ie+i-1)-b.x3f(k,j,ie+i-2);
       }
     }}
   }
@@ -749,6 +767,17 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     }
   }
 
+  // Inflow restriction
+  for (int k=ks; k<=ke; ++k) {
+    for (int j=1; j<=ngh; ++j) {
+      for (int i=is; i<=ie; ++i) {
+        if (prim(IVY,k,je+j,i) < 0.0) {
+          prim(IVY,k,je+j,i) = 0.0;
+        }
+      }
+    }
+  }
+
   // copy face-centered magnetic fields into ghost zones
   if (MAGNETIC_FIELDS_ENABLED) {
     for (int k=ks; k<=ke; ++k) {
@@ -762,9 +791,8 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          //b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
-          //-pco->dx2v(je+j)/pco->dx1v(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
-          b.x2f(k,(je+j+1),i) = b.x2f(k,(je+1),i);
+          b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
+          -pco->dx2f(je+j)/pco->dx1f(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
         }
       }
     }
