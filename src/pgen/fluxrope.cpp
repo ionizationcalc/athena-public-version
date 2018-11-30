@@ -393,8 +393,8 @@ static Real func_bmx(const Real x, const Real y)
     } else {
     /* quadrupole */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
-          -func_bphi(rm)*(y+fr_h)/rm;
-          //-fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
+          -func_bphi(rm)*(y+fr_h)/rm
+          -fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
     
     }
   }
@@ -424,8 +424,8 @@ static Real func_bmy(const Real x, const Real y)
     } else {
     /* quadrupole */
     bmy = -func_bphi(rs)*x/rs
-          +func_bphi(rm)*x/rm;
-          //-fr_rmom*(func_back(rb))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rb,3);
+          +func_bphi(rm)*x/rm
+          -fr_rmom*(func_back(rb))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rb,3);
     }
   }
   else
@@ -644,7 +644,7 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je+1; ++j) {
       for (int i=1; i<=ngh; ++i) {
-        b.x2f(k,j,(ie+i)) = b.x2f(k,j,(ie-i+1));
+        b.x2f(k,j,(ie+i)) = 2.0*b.x2f(k,j,(ie+i-1))-b.x2f(k,j,(ie+i-2));
       }
     }}
 
@@ -776,7 +776,7 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie+1; ++i) {
-          b.x1f(k,(je+j),i) = b.x1f(k,(je-j+1),i);
+          b.x1f(k,(je+j),i) = 2.0*b.x1f(k,(je+j-1),i) - b.x1f(k,(je+j-2),i);
         }
       }
     }
