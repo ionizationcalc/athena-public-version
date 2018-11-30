@@ -250,11 +250,7 @@ Real func_pini(Real x, Real y) {
 
   // close to the fluxrope
   if (r <= r2) {
-    if (sw_frbz == 1) {
-      p = pgas_r2;
-    } else {
-      p = pgas_r2 - func_uphi(r);
-    }
+    p = pgas_r2;
   } else {
     p = pmag_c*beta_min;
   }
@@ -296,7 +292,7 @@ Real func_rhoini(Real x, Real y) {
   t_bott = t1 * tanh((y - h) / w) + t2;
   rho = rho/t_bott;
 
-  /* Add a dense rope center */
+  /* Add a dense rope center 
   Real pi = 3.14159265358979;
   Real r, r2, t_rope, t_outer, t_inner;
   r2 = fr_ri + fr_del;
@@ -309,7 +305,7 @@ Real func_rhoini(Real x, Real y) {
     t_rope = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*r/r2));
   }
   rho = rho/t_rope;
-
+  */
   return rho;
 }
 
@@ -345,12 +341,8 @@ Real func_bzini(Real x, Real y) {
 
   if (r <= r2) {
     // inside the fluxrope
-    if (sw_frbz == 1) {
-      p_fluxrope = -func_uphi(r);
-      bz = sqrt(2.0*p_fluxrope);
-    } else {
-      bz = 0;
-    }
+    p_fluxrope = -func_uphi(r);
+    bz = sqrt(2.0*p_fluxrope);
   } else {
     // outside the fluxrope
     pmag_r2 = 0.5*SQR(func_bphi(r2));
@@ -401,8 +393,8 @@ static Real func_bmx(const Real x, const Real y)
     } else {
     /* quadrupole */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
-          -func_bphi(rm)*(y+fr_h)/rm
-          -fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
+          -func_bphi(rm)*(y+fr_h)/rm;
+          //-fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
     
     }
   }
@@ -432,8 +424,8 @@ static Real func_bmy(const Real x, const Real y)
     } else {
     /* quadrupole */
     bmy = -func_bphi(rs)*x/rs
-          +func_bphi(rm)*x/rm
-          -fr_rmom*(func_back(rb))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rb,3);
+          +func_bphi(rm)*x/rm;
+          //-fr_rmom*(func_back(rb))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rb,3);
     }
   }
   else
@@ -630,7 +622,7 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=js; j<=je; ++j) {
         for (int i=1; i<=ngh; ++i) {
-          prim(n,k,j,ie+i) = prim(n,k,j,ie);
+          prim(n,k,j,ie+i) = prim(n,k,j,ie-i+1);
         }
       }
     }
@@ -652,7 +644,7 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je+1; ++j) {
       for (int i=1; i<=ngh; ++i) {
-        b.x2f(k,j,(ie+i)) = 2.0*b.x2f(k,j,(ie+i-1))-b.x2f(k,j,(ie+i-2));
+        b.x2f(k,j,(ie+i)) = b.x2f(k,j,(ie-i+1));
       }
     }}
 
@@ -668,7 +660,7 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke+1; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=1; i<=ngh; ++i) {
-        b.x3f(k,j,(ie+i)) = 2.0*b.x3f(k,j,ie+i-1)-b.x3f(k,j,ie+i-2);
+        b.x3f(k,j,(ie+i)) = b.x3f(k,j,(ie-i+1));
       }
     }}
   }
@@ -692,7 +684,7 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          prim(n,k,js-j,i) = prim(n,k,js,i);
+          prim(n,k,js-j,i) = prim(n,k,js+j-1,i);
         }
       }
     }
@@ -736,7 +728,7 @@ void LintInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke+1; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          b.x3f(k,(js-j),i) = b.x3f(k,js,i);
+          b.x3f(k,(js-j),i) = b.x3f(k,js+j-1,i);
         }
       } 
     }
@@ -761,13 +753,14 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          prim(n,k,je+j,i) = prim(n,k,je,i);
+          prim(n,k,je+j,i) = prim(n,k,je-j+1,i);
         }
       }
     }
   }
 
   // Inflow restriction
+  Real dn_ratio;
   for (int k=ks; k<=ke; ++k) {
     for (int j=1; j<=ngh; ++j) {
       for (int i=is; i<=ie; ++i) {
@@ -783,7 +776,7 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie+1; ++i) {
-          b.x1f(k,(je+j),i) = 2.0*b.x1f(k,(je+j-1),i)-b.x1f(k,(je+j-2),i);
+          b.x1f(k,(je+j),i) = b.x1f(k,(je-j+1),i);
         }
       }
     }
@@ -800,10 +793,11 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke+1; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
-          b.x3f(k,(je+j  ),i) = 2.0*b.x3f(k,(je+j-1),i)-b.x3f(k,(je+j-2),i);
+          b.x3f(k,(je+j  ),i) = b.x3f(k,(je-j+1),i);
         }
       }
     }
   }
+
   return;
 }
