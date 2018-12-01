@@ -242,23 +242,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 Real func_pini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real p, p_ambient = 0.6*scale_bgdens;
-  Real r2 = fr_ri + 0.5*fr_del;
-  Real pmag_r2, pgas_r2, pmag_c;
-  pmag_r2 = 0.5*SQR(func_bphi(r2));
-  pgas_r2 = pmag_r2*beta_min;
-  pmag_c = 0.5*SQR(func_bphi(r));
 
-  // close to the fluxrope
-  if (r <= r2) {
-    p = pgas_r2;
+  if (sw_frbz == 1) {
+    p = p_ambient - func_uphi(r);
   } else {
-    p = pmag_c*beta_min;
-  }
-
-  // ambient regions
-  if (p <= p_ambient) {
     p = p_ambient;
   }
+  
   return p;
 }
 
@@ -334,24 +324,14 @@ Real func_azini(Real x, Real y) {
 //==============================================================================
 Real func_bzini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
-  Real r2 = fr_ri + 0.5*fr_del;
   Real bz, p_fluxrope;
-  Real pmag_r2, pgas_r2;
-  Real p_ambient = 0.6*scale_bgdens;
 
-  if (r <= r2) {
+  if (sw_frbz == 1) {
     // inside the fluxrope
     p_fluxrope = -func_uphi(r);
     bz = sqrt(2.0*p_fluxrope);
   } else {
-    // outside the fluxrope
-    pmag_r2 = 0.5*SQR(func_bphi(r2));
-    pgas_r2 = pmag_r2*beta_min;
-    if (pgas_r2 >= p_ambient) {
-      bz = sqrt(2.0*(pgas_r2 - func_pini(x, y)));
-    } else {
-      bz = 0;
-    }
+    bz = 0;
   }
   return bz;
 }
