@@ -168,7 +168,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   } else {
     fr_rmom = pin->GetReal("problem","fr_rmom");
   }
-  sw_frbz = pin->GetOrAddInteger("problem","sw_frbz",0);
+  sw_frbz = pin->GetOrAddInteger("problem","sw_frbz",1);
   scale_bgdens = pin->GetReal("problem","scale_bgdens");
   beta_min = pin->GetReal("problem","beta_min");
 
@@ -243,9 +243,11 @@ Real func_pini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real p, p_ambient = 0.6*scale_bgdens;
 
-  if (sw_frbz == 1) {
+  if (sw_frbz == 0) {
+    // No Bz
     p = p_ambient - func_uphi(r);
   } else {
+    // With Bz
     p = p_ambient;
   }
   
@@ -326,13 +328,14 @@ Real func_bzini(Real x, Real y) {
   Real r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   Real bz, p_fluxrope;
 
-  if (sw_frbz == 1) {
+  if (sw_frbz == 0) {
+    bz = 0;
+  } else {
     // inside the fluxrope
     p_fluxrope = -func_uphi(r);
     bz = sqrt(2.0*p_fluxrope);
-  } else {
-    bz = 0;
   }
+  
   return bz;
 }
 
