@@ -64,7 +64,7 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
 // Global parameters to define the initial fluxrope
 static int fr_case, sw_frbz;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_sigma, fr_rja;
-static Real beta_min, scale_bgdens;
+static Real scale_bgdens, scale_lowtcore;
 
 // Boundary conditions
 void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
@@ -130,7 +130,7 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
 // This function is called at the end of every timestep 
 // (note: it is not called at the half timestep). 
 void MeshBlock::UserWorkInLoop(void) {
-  // (1) remove velocity vz components
+  /* (1) remove velocity vz components
   for(int k=ks; k<=ke; k++) {
     for(int j=js; j<=je; j++) {
       for(int i=is; i<=ie; i++) {
@@ -140,6 +140,7 @@ void MeshBlock::UserWorkInLoop(void) {
       }
     }
   }
+  */
 
   return;
 }
@@ -162,15 +163,26 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   fr_ri = pin->GetReal("problem","fr_ri");
   fr_del = pin->GetReal("problem","fr_del");
   fr_rja = pin->GetReal("problem","fr_rja");
+  fr_rmom = pin->GetReal("problem","fr_rmom");
   if (fr_case == 2) {
     fr_sigma = pin->GetReal("problem","fr_sigma");
     fr_rmom = fr_d*fr_d*125.0/32.0*fr_sigma;
-  } else {
-    fr_rmom = pin->GetReal("problem","fr_rmom");
   }
   sw_frbz = pin->GetOrAddInteger("problem","sw_frbz",1);
   scale_bgdens = pin->GetReal("problem","scale_bgdens");
-  beta_min = pin->GetReal("problem","beta_min");
+  scale_lowtcore = pin->GetReal("problem","scale_lowtcore");
+  printf("---------------\n");
+  printf("sw_frbz=%d\n", sw_frbz);
+  printf("fr_case=%d\n", fr_case);
+  printf("h = %f\n", fr_h);
+  printf("d = %f\n", fr_d);
+  printf("ri = %f\n", fr_ri);
+  printf("del= %f\n", fr_del);
+  printf("rmom=%f\n", fr_rmom);
+  printf("rja =%f\n", fr_rja);
+  printf("scale_bgdens =%f\n", scale_bgdens);
+  printf("scale_lowtcore =%f\n", scale_lowtcore);
+  printf("---------------\n");
 
   // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
@@ -284,20 +296,24 @@ Real func_rhoini(Real x, Real y) {
   t_bott = t1 * tanh((y - h) / w) + t2;
   rho = rho/t_bott;
 
-  /* Add a dense rope center 
+  /* Add a dense rope center */
   Real pi = 3.14159265358979;
-  Real r, r2, t_rope, t_outer, t_inner;
-  r2 = fr_ri + fr_del;
+  Real r, r1, r2, t_rope, t_outer, t_inner;
+  r1 = fr_ri - 0.5*fr_del;
+  r2 = fr_ri + 0.5*fr_del;
   r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   t_outer = 1.0; // This is a scaled T, not the non-dimensional T.
-  t_inner = 0.025*t_outer;
+  t_inner = scale_lowtcore*t_outer;
   if (r >= r2) {
     t_rope = t_outer;
+  } else if (r <= r1) {
+    t_rope = t_inner;
   } else {
-    t_rope = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*r/r2));
+    //t_rope = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*r/r2));
+    t_rope = t_inner + (r-r1)/(r2-r1)*(t_outer-t_inner);
   }
   rho = rho/t_rope;
-  */
+  
   return rho;
 }
 
