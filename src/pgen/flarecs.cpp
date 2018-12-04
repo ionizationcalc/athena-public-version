@@ -198,7 +198,7 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie+1; ++i) {
           pbypx = func_pbypxini(pco->x1f(i), pco->x2f(j));
-          b.x1f(k,(js-j),i) = b.x1f(k,(js-j+1),i) - pbypx*pco->dx2v(js-j+1);
+          b.x1f(k,(js-j),i) = b.x1f(k,(js-j+1),i) - pbypx*pco->dx2f(js-j+1);
         }
       }
     }
@@ -255,7 +255,7 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie; ++i) {
           b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
-          -pco->dx2v(je+j)/pco->dx1v(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
+          -pco->dx2f(je+j)/pco->dx1f(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
         }
       }
     }
