@@ -43,6 +43,12 @@ static Real pi = 3.14159265359;
 static Real inflow_turb, psi_turb, Lx, Ly, yc_turb;
 
 // Boundary conditions
+void OpenInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh);
+void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh);
 void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
                     FaceField &b, Real time, Real dt,
                     int is, int ie, int js, int je, int ks, int ke, int ngh);
@@ -59,6 +65,8 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
 
 void Mesh::InitUserMeshData(ParameterInput *pin) {
   // Enroll boundary value function pointers
+  EnrollUserBoundaryFunction(INNER_X1, OpenInnerX1);
+  EnrollUserBoundaryFunction(OUTER_X1, OpenOuterX1);
   EnrollUserBoundaryFunction(INNER_X2, LinetiedInnerX2);
   EnrollUserBoundaryFunction(OUTER_X2, OpenOuterX2);
   return;
@@ -204,6 +212,131 @@ Real func_pbypxini(Real x, Real y) {
   Real pbypx;
   pbypx = (1.0/cs_width)*(1.0 - pow(tanh(x/cs_width), 2));
   return pbypx;
+}
+
+//==============================================================================
+// Open boudnary condition at the left edge
+//==============================================================================
+//----------------------------------------------------------------------------------------
+//! \fn void OpenInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+//                          FaceField &b, Real time, Real dt,
+//                          int is, int ie, int js, int je, int ks, int ke, int ngh)
+//  \brief Open boundary conditions, inner x1 boundary
+
+void OpenInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                    FaceField &b, Real time, Real dt,
+                    int is, int ie, int js, int je, int ks, int ke, int ngh) {
+  // copy hydro variables into ghost zones
+  for (int n=0; n<(NHYDRO); ++n) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          prim(n,k,j,is-i) = prim(n,k,j,is+i-1);
+        }
+      }}
+  }
+  
+  // inflow restriction
+  for (int k=ks; k<=ke; ++k) {
+    for (int j=js; j<=je; ++j) {
+      for (int i=1; i<=ngh; ++i) {
+        if (prim(IVX,k,j,is-i) > 0.0) {
+          prim(IVX,k,j,is-i) = -prim(IVX,k,j,is-i);
+        }
+      }
+    }
+  }
+  
+  // copy face-centered magnetic fields into ghost zones
+  if (MAGNETIC_FIELDS_ENABLED) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x1f(k,j,(is-i)) = 2.0*b.x1f(k,j,is-i+1) - b.x1f(k,j,is-i+2);
+        }
+      }}
+    
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je+1; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x2f(k,j,(is-i)) = b.x2f(k,j,is);
+          b.x1f(k,j,(is-i)) = b.x1f(k,j,(is-i+1))
+            +(pco->dx1f(is-i)/pco->dx2f(j))
+            *(b.x2f(k,(j+1),(is-i)) - b.x2f(k,j,(is-i)));
+        }
+      }}
+    
+    for (int k=ks; k<=ke+1; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x3f(k,j,(is-i)) = b.x3f(k,j,is);
+        }
+      }}
+  }
+  
+  return;
+}
+
+//==============================================================================
+// Open boudnary condition at the right edge
+//==============================================================================
+//! \fn void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+//                         FaceField &b, Real time, Real dt,
+//                         int is, int ie, int js, int je, int ks, int ke, int ngh)
+//  \brief Open boundary conditions, outer x1 boundary
+
+void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh) {
+  // copy hydro variables into ghost zones
+  for (int n=0; n<(NHYDRO); ++n) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          prim(n,k,j,ie+i) = prim(n,k,j,ie-i+1);
+        }
+      }
+    }
+  }
+  
+  // inflow restriction
+  for (int k=ks; k<=ke; ++k) {
+    for (int j=js; j<=je; ++j) {
+      for (int i=1; i<=ngh; ++i) {
+        if (prim(IVX,k,j,ie+i) < 0.0) {
+          prim(IVX,k,j,ie+i) = -prim(IVX,k,j,ie+i);
+        }
+      }
+    }
+  }
+  
+  // copy face-centered magnetic fields into ghost zones
+  if (MAGNETIC_FIELDS_ENABLED) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je+1; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x2f(k,j,(ie+i)) = 2.0*b.x2f(k,j,(ie+i-1))-b.x2f(k,j,(ie+i-2));
+        }
+      }}
+    
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+i))
+          -(pco->dx1f(ie+i)/pco->dx2f(j))
+          *(b.x2f(k,(j+1),(ie+i)) - b.x2f(k,j,(ie+i)));
+        }
+      }}
+    
+    for (int k=ks; k<=ke+1; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x3f(k,j,(ie+i)) = b.x3f(k,j,(ie-i+1));
+        }
+      }}
+  }
+  
+  return;
 }
 
 //==============================================================================
