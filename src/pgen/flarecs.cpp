@@ -32,10 +32,15 @@
 
 // functions
 Real func_azini(Real x, Real y);
+Real func_teini(Real y);
 Real func_pbypxini(Real x, Real y);
 
 // Global parameters to define the initial CS
 static Real cs_width, beta0;
+
+// Initial perturbations
+static Real pi = 3.14159265359;
+static Real inflow_turb, psi_turb, Lx, Ly, yc_turb;
 
 // Boundary conditions
 void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
@@ -71,7 +76,12 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   Real gm1 = peos->GetGamma() - 1.0;
   cs_width = pin->GetReal("problem","cs_width");
   beta0 = pin->GetReal("problem","beta0");
-
+  inflow_turb = pin->GetReal("problem","inflow_turb");
+  psi_turb = pin->GetReal("problem","psi_turb");
+  Lx = pin->GetReal("problem","Lx");
+  Ly = pin->GetReal("problem","Ly");
+  yc_turb = pin->GetReal("problem","yc_turb");
+  
   AthenaArray<Real> az;
   int nx1 = (ie-is)+1 + 2*(NGHOST);
   int nx2 = (je-js)+1 + 2*(NGHOST);
@@ -92,23 +102,34 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   }}
 
   // Initialize gas pressure
+  Real pmag_max;
+  pmag_max = 0.5*SQR(B0)*SQR(1.0+psi_turb*pi/Lx);
   Real bxc, byc;
   for (int j=js; j<=je+1; ++j) {
   for (int i=is; i<=ie+1; ++i) {
     bxc = 0.5*((az(j+1,i) - az(j,i))/pcoord->dx2f(j) + (az(j+1,i+1) - az(j,i+1))/pcoord->dx2f(j));
     byc = 0.5*((az(j,i) - az(j,i+1))/pcoord->dx1f(i) + (az(j+1,i) - az(j+1,i+1))/pcoord->dx1f(i));
-    // Assuming p_total = p0 + 0.5*1^2 and bz == 0
-    pgas(j,i) = (p0 + 0.5) - 0.5*(bxc*bxc + byc*byc);
+    
+    // Assuming p_total = p0 + pmag_max and bz == 0
+    pgas(j,i) = (p0 + pmag_max) - 0.5*(bxc*bxc + byc*byc);
   }}
 
   // Initialize density, momentum, face-centered fields
   for (int k=ks; k<=ke; k++) {
   for (int j=js; j<=je; j++) {
   for (int i=is; i<=ie; i++) {
-    phydro->u(IDN,k,j,i) = pgas(j,i)/(beta0/2.0);
+    phydro->u(IDN,k,j,i) = pgas(j,i)/((beta0/2.0)*func_teini(pcoord->x2f(j)));
     phydro->u(IM1,k,j,i) = 0.0;
     phydro->u(IM2,k,j,i) = 0.0;
     phydro->u(IM3,k,j,i) = 0.0;
+    
+    /* Add inflow perturbations
+    phydro->u(IM1,k,j,i) = -inflow_turb*pcoord->x1f(i)/(1.0);
+    if (pcoord->x2f(j) <= 1.0) {
+      phydro->u(IM1,k,j,i) = phydro->u(IM1,k,j,i)*pcoord->x2f(j);
+    }
+    */
+    
   }}}
 
   // initialize interface B
@@ -153,7 +174,27 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 Real func_azini(Real x, Real y) {
   Real az0 = 0, az;
   az = -cs_width * log(cosh(x / cs_width)) + az0;
+  // Add perturbations
+  Real az1;
+  az1 = psi_turb*cos(pi*x/Lx)*cos(2.0*pi*(y-yc_turb)/Ly);
+  az = az - az1;
   return az;
+}
+
+//==============================================================================
+// function of the initial t(x, y)
+//==============================================================================
+Real func_teini(Real y) {
+  Real t;
+  Real h = 0.04;
+  Real w = 0.01;
+  Real t1, t2, t_bott, t_coro, t_chro;
+  t_coro = 1.0; // This is a scaled T, not the non-dimensional T.
+  t_chro = 0.0001;
+  t1 = 0.5 * (t_coro - t_chro);
+  t2 = 0.5 * (t_coro + t_chro);
+  t = t1 * tanh((y - h) / w) + t2;
+  return t;
 }
 
 //==============================================================================
@@ -187,7 +228,7 @@ void LinetiedInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim, 
         prim(IVX,k,js-j,i) = 0;
         prim(IVY,k,js-j,i) = 0;
         prim(IVZ,k,js-j,i) = 0;
-        //prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/(beta0/2.0);
+        prim(IDN,k,js-j,i) = prim(IPR,k,js,i)/((beta0/2.0)*func_teini(pco->x2f(js-j)));
       }
     }
   }
