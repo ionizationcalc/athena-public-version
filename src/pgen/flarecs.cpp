@@ -241,7 +241,7 @@ void OpenInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int j=js; j<=je; ++j) {
       for (int i=1; i<=ngh; ++i) {
         if (prim(IVX,k,j,is-i) > 0.0) {
-          prim(IVX,k,j,is-i) = -prim(IVX,k,j,is-i);
+          prim(IVX,k,j,is-i) = 0;
         }
       }
     }
@@ -250,16 +250,15 @@ void OpenInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
   // copy face-centered magnetic fields into ghost zones
   if (MAGNETIC_FIELDS_ENABLED) {
     for (int k=ks; k<=ke; ++k) {
-      for (int j=js; j<=je; ++j) {
+      for (int j=js; j<=je+1; ++j) {
         for (int i=1; i<=ngh; ++i) {
-          b.x1f(k,j,(is-i)) = 2.0*b.x1f(k,j,is-i+1) - b.x1f(k,j,is-i+2);
+          b.x2f(k,j,(is-i)) = 2.0*b.x2f(k,j,is-i+1)-b.x2f(k,j,is-i+2);
         }
       }}
     
     for (int k=ks; k<=ke; ++k) {
-      for (int j=js; j<=je+1; ++j) {
+      for (int j=js; j<=je; ++j) {
         for (int i=1; i<=ngh; ++i) {
-          b.x2f(k,j,(is-i)) = b.x2f(k,j,is);
           b.x1f(k,j,(is-i)) = b.x1f(k,j,(is-i+1))
             +(pco->dx1f(is-i)/pco->dx2f(j))
             *(b.x2f(k,(j+1),(is-i)) - b.x2f(k,j,(is-i)));
@@ -304,7 +303,7 @@ void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int j=js; j<=je; ++j) {
       for (int i=1; i<=ngh; ++i) {
         if (prim(IVX,k,j,ie+i) < 0.0) {
-          prim(IVX,k,j,ie+i) = -prim(IVX,k,j,ie+i);
+          prim(IVX,k,j,ie+i) = 0;
         }
       }
     }
