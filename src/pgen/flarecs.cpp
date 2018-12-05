@@ -419,8 +419,8 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
     for (int k=ks; k<=ke; ++k) {
       for (int j=1; j<=ngh; ++j) {
         for (int i=is; i<=ie+1; ++i) {
-          //b.x1f(k,(je+j),i) = 2.0*b.x1f(k,(je+j-1),i)-b.x1f(k,(je+j-2),i);
-          b.x1f(k,(je+j),i) = -b.x1f(k,(je-j+1),i);
+          b.x1f(k,(je+j),i) = 2.0*b.x1f(k,(je+j-1),i)-b.x1f(k,(je+j-2),i);
+          //b.x1f(k,(je+j),i) = -b.x1f(k,(je-j+1),i);
         }
       }
     }
