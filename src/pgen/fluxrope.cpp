@@ -64,6 +64,7 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
 // Global parameters to define the initial fluxrope
 static int fr_case, sw_frbz;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rmom, fr_sigma, fr_rja;
+static Real gauss_c1, gauss_c2, rja_bgscale;
 static Real scale_bgdens, scale_lowtcore;
 
 // Boundary conditions
@@ -171,6 +172,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   sw_frbz = pin->GetOrAddInteger("problem","sw_frbz",1);
   scale_bgdens = pin->GetReal("problem","scale_bgdens");
   scale_lowtcore = pin->GetReal("problem","scale_lowtcore");
+  gauss_c1 = 0.1*fr_d/2.35482;
+  gauss_c2 = 1.0/2.35482;
+  rja_bgscale = 0.0001;
+  
   printf("---------------\n");
   printf("sw_frbz=%d\n", sw_frbz);
   printf("fr_case=%d\n", fr_case);
@@ -296,23 +301,15 @@ Real func_rhoini(Real x, Real y) {
   t_bott = t1 * tanh((y - h) / w) + t2;
   rho = rho/t_bott;
 
-  /* Add a dense rope center */
-  Real pi = 3.14159265358979;
+  /* Add a dense rope center
   Real r, r1, r2, t_rope, t_outer, t_inner;
-  r1 = fr_ri - 0.5*fr_del;
-  r2 = fr_ri + 0.5*fr_del;
   r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   t_outer = 1.0; // This is a scaled T, not the non-dimensional T.
   t_inner = scale_lowtcore*t_outer;
-  if (r >= r2) {
-    t_rope = t_outer;
-  } else if (r <= r1) {
-    t_rope = t_inner;
-  } else {
-    //t_rope = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*r/r2));
-    t_rope = t_inner + (r-r1)/(r2-r1)*(t_outer-t_inner);
-  }
+  t_rope = t_inner + (t_outer-t_inner)*exp(-0.5*pow(r/gauss_c1, 2));
+  
   rho = rho/t_rope;
+  */
   
   return rho;
 }
@@ -376,55 +373,59 @@ Real func_integ_pphi(Real r, const Real phi) {
 static Real func_bmx(const Real x, const Real y)
 {
   /*c model field x-component */
-  Real rs, rm, rb, r2;
-  Real bmx;
+  Real rs, rm, rd;
+  Real bmx, bmx_back;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
-  rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
-  r2 = fr_ri + 0.5*fr_del;
+  rd = sqrt(pow(x, 2) + pow(y + fr_d, 2));
+  
   if (rs > 0.0)
   {
     if (fr_case == 1) {
     /* dipole case */
-    bmx = +func_bphi(rs)*(y-fr_h)/rs
-        -func_bphi(rm)*(y+fr_h)/rm
-        -func_bphi(r2)*fr_rmom*fr_d*r2*(pow(x,2)-pow(y+fr_d, 2))/pow(rb,4);
+    Real I1 = fr_rja*2.0*PI*SQR(gauss_c1)
+      * (1.0 - exp(-0.5*SQR(10.0/gauss_c1))); // Gaussion Jz(r)
+    bmx = -func_bphi(rs)*(y-fr_h)/rs
+          +func_bphi(rm)*(y+fr_h)/rm
+          -I1/(2.0*PI)*fr_rmom*fr_d*(pow(x,2)-pow(y+fr_d, 2))/pow(rd,4);
     } else {
     /* quadrupole */
     bmx = +func_bphi(rs)*(y-fr_h)/rs
           -func_bphi(rm)*(y+fr_h)/rm
-          -fr_rmom*func_back(rb)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rb,3);
-    
+          -fr_rmom*func_back(rd)*(pow(y+fr_d,3)-3.0*(y+fr_d)*pow(x,2))/pow(rd,3);
     }
   }
   else
   {
     bmx = 0.0;
   }
+  
   return bmx;
 }
 
 static Real func_bmy(const Real x, const Real y)
 {
-  /*  model field z-component */
-  Real rs, rm, rb, r2;
+  /*  model field y-component */
+  Real rs, rm, rd;
   Real bmy;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
-  rb = sqrt(pow(x, 2) + pow(y + fr_d, 2));
-  r2 = fr_ri + 0.5*fr_del;
+  rd = sqrt(pow(x, 2) + pow(y + fr_d, 2));
+  
   if (rs > 0.0)
   {
     if (fr_case == 1) {
     /* dipole case */
-    bmy = -func_bphi(rs)*x/rs
-          +func_bphi(rm)*x/rm
-          -func_bphi(r2)*fr_rmom*fr_d*r2*(2.0*x*(y+fr_d))/pow(rb,4);
+    Real I1 = fr_rja*2.0*PI*SQR(gauss_c1)
+      * (1.0 - exp(-0.5*SQR(10.0/gauss_c1))); // Gaussion Jz(r)
+    bmy = func_bphi(rs)*x/rs
+          -func_bphi(rm)*x/rm
+          -I1/(2.0*PI)*fr_rmom*fr_d*(2.0*x*(y+fr_d))/pow(rd,4);
     } else {
     /* quadrupole */
-    bmy = -func_bphi(rs)*x/rs
-          +func_bphi(rm)*x/rm
-          -fr_rmom*(func_back(rb))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rb,3);
+    bmy = func_bphi(rs)*x/rs
+          -func_bphi(rm)*x/rm
+          -fr_rmom*(func_back(rd))*(pow(x,3) - 3.0*x*pow((y+fr_d),2))/pow(rd,3);
     }
   }
   else
@@ -436,29 +437,23 @@ static Real func_bmy(const Real x, const Real y)
 
 static Real func_bphi(const Real r)
 {
-  /* cylindrical field function */
-  Real riq, delq, piq, t1, t2, t3, bphi;
-  Real pi = 3.14159265358979;
-  Real ro, r1, r2;
-  r1 = fr_ri - 0.5 * fr_del;
-  r2 = fr_ri + 0.5 * fr_del;
-  riq = fr_ri * fr_ri;
-  delq = fr_del * fr_del;
-  piq = pi * pi;
-  if (r <= r1)
+  Real bphi;
+  /* Gaussian distribtion */
+  Real I1 = fr_rja*2.0*PI*SQR(gauss_c1)
+  *(1.0 - exp(-0.5*SQR(r/gauss_c1)));
+  
+  Real Ibg = rja_bgscale*fr_rja*2.0*PI*SQR(gauss_c2)
+  *(1.0 - exp(-0.5*SQR(r/gauss_c2)));
+  
+  Real I = I1 + Ibg;
+  
+  if (r > 0.0)
   {
-    bphi = -0.5 * fr_rja * r;
-  }
-  else if (r <= r2)
-  {
-    t1 = 0.5 * r1 * r1 - delq / piq + 0.5 * r * r;
-    t2 = (fr_del * r / pi) * sin((pi / fr_del) * (r - r1));
-    t3 = (delq / piq) * cos((pi / fr_del) * (r - r1));
-    bphi = -0.5 * fr_rja * (t1 + t2 + t3) / r;
+    bphi = -I / (2.0 * PI * r);
   }
   else
   {
-    bphi = -0.5 * fr_rja * (riq + 0.25 * delq - 2. * delq / piq) / r;
+    bphi = 0.0;
   }
   return bphi;
 }
@@ -466,7 +461,7 @@ static Real func_bphi(const Real r)
 static Real func_uphi(const Real r)
 {
   Real uphi;
-  Real rend = fr_ri + fr_del+fr_ri;
+  Real rend = 10.0;
   if (r <= rend) {
     uphi = adaptiveSimpsons(func_integ_pphi,
                             0,
@@ -481,33 +476,26 @@ static Real func_rjphi(const Real r)
 {
   /*  current density */
   Real pi = 3.14159265358979;
-  Real r1, r2;
   Real rjphi;
-  r1 = fr_ri - 0.5 * fr_del;
-  r2 = fr_ri + 0.5 * fr_del;
-  if (r <= r1)
-  {
-    rjphi = fr_rja;
-  }
-  else if (r <= r2)
-  {
-    rjphi = 0.5 * fr_rja * (cos((pi / fr_del) * (r - r1)) + 1.);
-  }
-  else
-  {
-    rjphi = 0.;
-  }
+  /* Gaussion distribution */
+  rjphi = fr_rja*exp(-0.5*pow((r/gauss_c1), 2));
+  
+  // Add a background jz
+  rjphi = rjphi + rja_bgscale*fr_rja*exp(-0.5*pow((r/gauss_c2), 2));
+  
   return rjphi;
 }
 
 static Real func_back(const Real r)
 {
-  Real riq, delq, piq, rmm, back; 
-  Real pi = 3.14159265358979;
+  Real riq, delq, piq, rmm, back;
   riq = pow(fr_ri, 2);
   delq = pow(fr_del, 2);
-  piq = pow(pi, 2);
-  rmm = 0.5 * fr_rja * (riq + 0.25 * delq - 2. * delq / piq);
+  piq = pow(PI, 2);
+  //rmm = 0.5 * fr_rja * (riq + 0.25 * delq - 2. * delq / piq);
+  Real I1 = fr_rja*2.0*PI*SQR(gauss_c1)
+  * (1.0 - exp(-0.5*SQR(10.0/gauss_c1)));
+  rmm = I1/(2.0*PI);
   back = rmm / pow(r, 3);
   return back;
 }
