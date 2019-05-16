@@ -20,6 +20,7 @@
 
 // Athena++ headers
 #include "../athena.hpp"
+#include "../globals.hpp"
 #include "../athena_arrays.hpp"
 #include "../parameter_input.hpp"
 #include "../coordinates/coordinates.hpp"
@@ -97,18 +98,18 @@ AthenaArray<Real> az;
 // Global parameters to define the initial fluxrope
 static int sw_frbz, fr_mode;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rja;
-static Real gauss_c1, gauss_c2;
+static Real gauss_fr, gauss_erope;
 
 // Global parameters to define the source
-static Real bg_rja, bg_ri;
-static Real I_bg_ratio;
+static Real erope_rja, erope_ri;
+static Real I_erope_ratio;
 static Real I_ratio, I_source;
 static Real lambda_sta, lambda_end; // X range of source distribution
 
 // Global parameters to define the background gas
 static Real scale_bgdens, scale_lowtcore;
 static Real Te_corona, Te_bottom;
-static Real p_base, rho_base, te_base;
+static Real y_base, p_base, rho_base, te_base;
 static Real Height_tr, Width_tr;
 static Real beta_floor = 0.01;
 
@@ -248,7 +249,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   fr_ri = pin->GetReal("problem","fr_ri");
   fr_del = pin->GetReal("problem","fr_del");
   //fr_rja = pin->GetReal("problem","fr_rja"); depends on I_source and I_ratio
-  gauss_c1 = fr_ri*(2./4.29193);
+  gauss_fr = fr_ri*(2./4.29193);
   
   // Initialize sources
   I_source = pin->GetReal("problem", "I_source");
@@ -256,18 +257,19 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   lambda_sta = pin->GetReal("problem", "lambda_sta");
   lambda_end = pin->GetReal("problem", "lambda_end");
 
-  // Initialize the extra-current around the fluxrope
-  I_bg_ratio = pin->GetReal("problem", "I_bg_ratio");
-  bg_ri = pin->GetReal("problem", "bg_ri");
-  gauss_c2 = bg_ri*(2./4.29193);
-  bg_rja = (I_source*I_bg_ratio)/(2.0*PI*SQR(gauss_c2)* (1.0 - exp(-0.5*SQR(10.0/gauss_c2))));
+  // Initialize the Extra-current around the fluxROPE
+  I_erope_ratio = pin->GetReal("problem", "I_erope_ratio");
+  erope_ri = pin->GetReal("problem", "erope_ri");
+  gauss_erope = erope_ri*(2./4.29193);
+  erope_rja = (I_source*I_erope_ratio)/(2.0*PI*SQR(gauss_erope)
+    *(1.0 - exp(-0.5*SQR(10.0/gauss_erope))));
 
   // Get the current density fr_rja inside the fluxrope
   Real I = I_source*I_ratio; // Total current inside the fluxrope
   if (fr_mode == 1) {
     fr_rja = I/(PI*(SQR(fr_ri) + 0.25*SQR(fr_del) - 2.0*SQR(fr_del / PI)));
   } else if (fr_mode == 2) {
-    fr_rja = I/(2.0*PI*SQR(gauss_c1)* (1.0 - exp(-0.5*SQR(10.0/gauss_c1))));
+    fr_rja = I/(2.0*PI*SQR(gauss_fr)* (1.0 - exp(-0.5*SQR(10.0/gauss_fr))));
   } else {
     fr_rja = 0;
   }
@@ -280,19 +282,26 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   Height_tr = pin->GetReal("problem","Height_tr"); // (unit: m)
   Width_tr = pin->GetReal("problem","Width_tr"); // 
 
+  // Define the base density and temperature
+  y_base = fr_h;
   rho_base = 1.673e-11/Rhochar * scale_bgdens;
   te_base = Te_corona / Tchar;
   p_base = rho_base * te_base;
-  printf("---------------\n");
-  printf("sw_frbz=%d\n", sw_frbz);
-  printf("h = %f\n", fr_h);
-  printf("d = %f\n", fr_d);
-  printf("ri = %f\n", fr_ri);
-  printf("rja =%f\n", fr_rja);
-  printf("scale_bgdens =%f\n", scale_bgdens);
-  printf("scale_lowtcore =%f\n", scale_lowtcore);
-  printf("rho_base=%f, Te_base=%f\n", rho_base, te_base);
-  printf("---------------\n");
+
+  if (Globals::my_rank == 0) {
+    printf("---------------\n");
+    printf("sw_frbz=%d\n", sw_frbz);
+    printf("h = %f\n", fr_h);
+    printf("d = %f\n", fr_d);
+    printf("ri = %f\n", fr_ri);
+    printf("rja =%f\n", fr_rja);
+    printf("erope_rja =%f\n", erope_rja);
+    printf("scale_bgdens =%f\n", scale_bgdens);
+    printf("scale_lowtcore =%f\n", scale_lowtcore);
+    printf("rho_base=%f, Te_base=%f\n", rho_base, te_base);
+    printf("Lchar=%.3e, Vchar=%.3e, Timechar=%.3e, Tchar=%.3e, Nechar=%.3e, Bchar=%.3e\n", Lchar, Vchar, Timechar, Tchar, Nechar, Bchar);
+    printf("---------------\n");
+  }
 
   // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
@@ -367,7 +376,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 //==============================================================================
 Real func_pini(Real x, Real y) {
   Real rs = sqrt(x*x + (y-fr_h)*(y-fr_h));
-  Real p, y_base = fr_h;
+  Real p;
 
   // P depends on beta
   p = func_p_betadepend(y, y_base, rho_base, te_base);
@@ -375,9 +384,11 @@ Real func_pini(Real x, Real y) {
   if (sw_frbz == 0) {
     // No Bz
     p = p - func_uphi(rs);
-  } else {
+  } else if (sw_frbz == 1) {
     // With Bz
     p = p - func_uphi_bg(rs);
+  } else {
+    p = p;
   }
 
   return p;
@@ -396,13 +407,17 @@ Real func_teini(Real x, Real y) {
 */
 
 Real func_rhoini(Real x, Real y) {
-  Real rho;
-  // isotherm mode
-  //rho = func_pini(x, y)/func_teini(x, y);
+  // rho is defined from coronal background
+  Real rho = func_rho_pdepend(y, y_base, rho_base, te_base);
 
-  // rho depends on beta
-  Real y_base = fr_h;
-  rho = func_rho_pdepend(y, y_base, rho_base, te_base);
+  // If bg_jz != 0, then plus the extra-density around the rope.
+  if (I_erope_ratio != 0) {
+    Real rs = sqrt(x*x + (y-fr_h)*(y-fr_h));
+    Real T_current = func_p_betadepend(y, y_base, rho_base, te_base)/rho;
+    Real rho_extra = fabs(func_uphi_bg(rs))/T_current;
+    rho = rho + rho_extra;
+  }
+
   return rho;
 }
 
@@ -610,7 +625,7 @@ static Real func_bphi_rope(const Real r)
     }
   } else if (fr_mode == 2) {
     /* mode 2: Gaussian distribtion */
-    Real I_rope = fr_rja * 2.0 * PI * SQR(gauss_c1) * (1.0 - exp(-0.5 * SQR(r / gauss_c1)));
+    Real I_rope = fr_rja * 2.0 * PI * SQR(gauss_fr) * (1.0 - exp(-0.5 * SQR(r / gauss_fr)));
     if (r > 0.0) {
       bphi_rope = -I_rope / (2.0 * PI * r);
     } else {
@@ -626,7 +641,7 @@ static Real func_bphi_bg(const Real r)
 {
   /* bphi_bg */
   Real bphi_bg;
-  Real Ibg = bg_rja * 2.0 * PI * SQR(gauss_c2) * (1.0 - exp(-0.5 * SQR(r / gauss_c2)));
+  Real Ibg = erope_rja * 2.0 * PI * SQR(gauss_erope) * (1.0 - exp(-0.5 * SQR(r / gauss_erope)));
   if (r > 0.0) {
     bphi_bg = -Ibg / (2.0 * PI * r);
   } else {
@@ -666,7 +681,7 @@ static Real func_uphi_rope(const Real r)
 static Real func_uphi_bg(const Real r)
 {
   Real uphi;
-  Real rend = 20.0*bg_ri;
+  Real rend = 20.0*erope_ri;
   if (r <= rend) {
     uphi = adaptiveSimpsons(func_integ_pphi_bg,
                             0,
@@ -700,7 +715,7 @@ static Real func_rjphi_rope(const Real r)
     }
   } else if (fr_mode == 2) {
     /* Case 2: Gaussion distribution */
-    rjphi_rope = fr_rja * exp(-0.5 * pow((r / gauss_c1), 2));
+    rjphi_rope = fr_rja * exp(-0.5 * pow((r / gauss_fr), 2));
   } else {
     rjphi_rope = 0;
   }
@@ -711,7 +726,7 @@ static Real func_rjphi_bg(const Real r)
 {
   /*  current density */
   Real rjphi_bg;
-  rjphi_bg = bg_rja*exp(-0.5*pow((r/gauss_c2), 2));
+  rjphi_bg = erope_rja*exp(-0.5*pow((r/gauss_erope), 2));
   return rjphi_bg;
 }
 
