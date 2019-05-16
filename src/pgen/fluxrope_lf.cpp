@@ -163,7 +163,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   if(adaptive==true)
       EnrollUserRefinementCondition(RefinementCondition);
 
-  // Static gravity source in momentum equation
+  // Static gravity source in momentum equations
   EnrollUserExplicitSourceFunction(static_grav_source);
   return;
 }
@@ -491,23 +491,21 @@ static Real func_bmx(const Real x, const Real y)
 {
   /*c model field x-component */
   Real rs, rm;
-  Real bmx, bmx_bg;
+  Real bmx_rope, bmx_bg;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   
   // flux rope (and its mirros)
-  bmx = 0.0;
   if (rs > 0.0) {
-    bmx = +func_bphi(rs)*(y-fr_h)/rs - func_bphi(rm)*(y+fr_h)/rm;
+    bmx_rope = +func_bphi(rs)*(y-fr_h)/rs - func_bphi(rm)*(y+fr_h)/rm;
   } else {
-    bmx = 0.0;
+    bmx_rope = 0.0;
   }
   
   // background
   bmx_bg = func_bmx_bg(x, y, lambda_sta, lambda_end, 2);
   
-  //bmx = bmx + bmx_bg;
-  return bmx_bg;
+  return bmx_rope + bmx_bg;
 }
 
 static Real func_bmx_bg(const Real x, const Real y, const Real ls, const Real le, const int type)
@@ -541,23 +539,21 @@ static Real func_bmy(const Real x, const Real y)
 {
   /*  model field y-component */
   Real rs, rm;
-  Real bmy, bmy_bg;
+  Real bmy_rope, bmy_bg;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
   rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   
   // fluxrope
-  bmy = 0;
   if (rs > 0.0) {
-    bmy = -func_bphi(rs)*x/rs + func_bphi(rm)*x/rm;
+    bmy_rope = -func_bphi(rs)*x/rs + func_bphi(rm)*x/rm;
   } else {
-    bmy = 0;
+    bmy_rope = 0;
   }
   
   // background
   bmy_bg = func_bmy_bg(x, y, lambda_sta, lambda_end, 2);
   
-  bmy = bmy + bmy_bg;
-  return bmy_bg;
+  return bmy_rope + bmy_bg;
 }
 
 static Real func_bmy_bg(const Real x, const Real y, const Real ls, const Real le, const int type)
@@ -1275,7 +1271,7 @@ int RefinementCondition(MeshBlock *pmb)
   }
   //printf("fjz_min=%f\n", fjz_min);
   int flag_fjz = 0;
-  if(fjz_min < -1.0) flag_fjz = 1;
+  if(fjz_min < -5.0) flag_fjz = 1;
   if(fjz_min >= -0.1) flag_fjz = -1;
 
 
@@ -1292,7 +1288,7 @@ int RefinementCondition(MeshBlock *pmb)
   }
   int flag_beta = 0;
   if (minbeta < 0.01) flag_beta = 1;
-  if(minbeta > 0.05)  flag_beta = -1;
+  if (minbeta > 0.05)  flag_beta = -1;
 
   // return flag 
   if ((flag_fjz == 1) || (flag_beta == 1)) return 1;
