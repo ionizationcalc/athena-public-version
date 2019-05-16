@@ -70,7 +70,6 @@ static Real func_rjphi(const Real r);
 static Real func_rjphi_bg(const Real r);
 static Real func_rjphi_rope(const Real r);
 
-static Real func_uphi(const Real r);
 static Real func_uphi_bg(const Real r);
 static Real func_uphi_rope(const Real r);
 
@@ -288,7 +287,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   te_base = Te_corona / Tchar;
   p_base = rho_base * te_base;
 
-  if (Globals::my_rank == 0) {
+  //if (my_rank == 0) {
     printf("---------------\n");
     printf("sw_frbz=%d\n", sw_frbz);
     printf("h = %f\n", fr_h);
@@ -301,7 +300,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     printf("rho_base=%f, Te_base=%f\n", rho_base, te_base);
     printf("Lchar=%.3e, Vchar=%.3e, Timechar=%.3e, Tchar=%.3e, Nechar=%.3e, Bchar=%.3e\n", Lchar, Vchar, Timechar, Tchar, Nechar, Bchar);
     printf("---------------\n");
-  }
+  //}
 
   // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
@@ -354,11 +353,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     for (int k=ks; k<=ke; k++) {
     for (int j=js; j<=je; j++) {
     for (int i=is; i<=ie; i++) {
-      Real pavg = 0.25*(func_pini(pcoord->x1f(i), pcoord->x2f(j))
-                     +func_pini(pcoord->x1f(i), pcoord->x2f(j+1))
-                     +func_pini(pcoord->x1f(i+1), pcoord->x2f(j))
-                     +func_pini(pcoord->x1f(i+1), pcoord->x2f(j+1)));
-      phydro->u(IEN,k,j,i) = pavg/gm1 +
+      xc = 0.5*(pcoord->x1f(i) + pcoord->x1f(i+1));
+      yc = 0.5*(pcoord->x2f(j) + pcoord->x2f(j+1));
+      phydro->u(IEN,k,j,i) = func_pini(xc, yc)/gm1 +
           0.5*(SQR(0.5*(pfield->b.x1f(k,j,i) + pfield->b.x1f(k,j,i+1))) +
                SQR(0.5*(pfield->b.x2f(k,j,i) + pfield->b.x2f(k,j+1,i))) +
                SQR(0.5*(pfield->b.x3f(k,j,i) + pfield->b.x3f(k+1,j,i)))) + (0.5)*
@@ -383,7 +380,7 @@ Real func_pini(Real x, Real y) {
 
   if (sw_frbz == 0) {
     // No Bz
-    p = p - func_uphi(rs);
+    p = p - func_uphi_bg(rs) - func_uphi_rope(rs);
   } else if (sw_frbz == 1) {
     // With Bz
     p = p - func_uphi_bg(rs);
@@ -456,7 +453,7 @@ static Real func_p_isoteconst(const Real y, const Real y0,
 
 /*----------------------------------------------------------------------------*/
 static Real func_rho_pdepend(const Real y, const Real y0, const Real rho0, const Real T0) {
-  Real ddy = 1.0e-7;
+  Real ddy = 1.0e-12;
   Real rho = -(1.0/gsun_y(y))
       *(func_p_betadepend(y+ddy, y0, rho0, T0) 
       - func_p_betadepend(y-ddy, y0, rho0, T0))/(2.0*ddy);
@@ -648,11 +645,6 @@ static Real func_bphi_bg(const Real r)
     bphi_bg = 0.0;
   }
   return bphi_bg;
-}
-
-static Real func_uphi(const Real r)
-{
-  return func_uphi_rope(r) + func_uphi_bg(r); 
 }
 
 static Real func_uphi_rope(const Real r)
@@ -984,6 +976,11 @@ static Real func_pbypxini(const Real x, const Real y)
   Real numera = yc*(numera_1 - numera_2);
   Real denomi = xles*xlss;
   Real pbypx = coeff*numera/denomi;
+
+  // Test
+  Real ddx = 1.0e-12;
+  pbypx = (func_bmy(x+ddx,y)-func_bmy(x-ddx,y))/(2.0*ddx);
+
   return pbypx;
 }
 
@@ -1000,7 +997,7 @@ void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
         for (int i=is; i<=ie; ++i) {
           prim(n,k,je+j,i) = prim(n,k,je-j+1,i);
           Real yc = 0.5*(pco->x2f(j) + pco->x2f(j+1));
-          Real grav_acc = gsun_y(yc);
+          Real grav_acc = -gsun_y(yc);
           prim(IPR,k,je+j,i) = prim(IPR,k,je-j+1,i)
              + prim(IDN,k,je-j+1,i)*grav_acc*(2*j-1)*pco->dx2f(j);
         }
@@ -1207,10 +1204,10 @@ void static_grav_source(MeshBlock *pmb, const Real time, const Real dt,
     for (int j=pmb->js; j<=pmb->je; ++j) {
       for (int i=pmb->is; i<=pmb->ie; ++i) {
         Real yc = 0.5*(pmb->pcoord->x2f(j) + pmb->pcoord->x2f(j+1));
-        Real grav_acc = gsun_y(yc);
+        Real grav_acc = -gsun_y(yc); // negative direction in y-
         Real src = dt*prim(IDN,k,j,i)*grav_acc;
         cons(IM2,k,j,i) += src;
-        //if (NON_BAROTROPIC_EOS) cons(IEN,k,j,i) += src*prim(IVY,k,j,i);
+        if (NON_BAROTROPIC_EOS) cons(IEN,k,j,i) += src*prim(IVY,k,j,i);
         }
       }
     }
@@ -1302,8 +1299,8 @@ int RefinementCondition(MeshBlock *pmb)
     }
   }
   int flag_beta = 0;
-  if (minbeta < 0.01) flag_beta = 1;
-  if (minbeta > 0.05)  flag_beta = -1;
+  if (minbeta < 0.001) flag_beta = 1;
+  if (minbeta > 0.01)  flag_beta = -1;
 
   // return flag 
   if ((flag_fjz == 1) || (flag_beta == 1)) return 1;
