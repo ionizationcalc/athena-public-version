@@ -1234,7 +1234,6 @@ static Real gsun_y(const Real x2)
 //------------------------------------------------------------------------------
 int RefinementCondition(MeshBlock *pmb)
 {
-  int flag_p;
   AthenaArray<Real> &w = pmb->phydro->w;
   AthenaArray<Real> &bx = pmb->pfield->b.x1f;
   AthenaArray<Real> &by = pmb->pfield->b.x2f;
@@ -1255,7 +1254,7 @@ int RefinementCondition(MeshBlock *pmb)
   return 0;
   */
   
-  /* (2) Pressure flag 
+  /* (2) Pressure flag */
   for(int j=pmb->js; j<=pmb->je; j++) {
     for(int i=pmb->is; i<=pmb->ie; i++) {
       Real eps= (std::abs(w(IEN,k,j,i+1)-2.0*w(IEN,k,j,i)+w(IEN,k,j,i-1))
@@ -1263,12 +1262,11 @@ int RefinementCondition(MeshBlock *pmb)
       maxeps = std::max(maxeps, eps);
     }
   }
-  if(maxeps > 0.05) return 1;
-  if(maxeps < 0.001) return -1;
-  return 0;
-  */
+  int flag_p = 0;
+  if(maxeps > 0.05) flag_p = 1;
+  if(maxeps < 0.025) flag_p = -1;
   
-  /* Negative jz X |B| flag */
+  /* (3) Negative jz X |B| flag */
   Real fjz_min = 0;
   for(int j=pmb->js; j<=pmb->je; j++) {
     for(int i=pmb->is; i<=pmb->ie; i++) {
@@ -1281,13 +1279,12 @@ int RefinementCondition(MeshBlock *pmb)
       fjz_min = std::min(fjz_min, fjz_c);
     }
   }
-  //printf("fjz_min=%f\n", fjz_min);
   int flag_fjz = 0;
-  if(fjz_min < -5.0) flag_fjz = 1;
+  if(fjz_min < -1.0) flag_fjz = 1;
   if(fjz_min >= -0.1) flag_fjz = -1;
 
 
-  /* (3) beta flag */
+  /* (4) beta flag */
   Real minbeta=1.0;
   for(int j=pmb->js; j<=pmb->je; j++) {
     for(int i=pmb->is; i<=pmb->ie; i++) {
@@ -1303,8 +1300,8 @@ int RefinementCondition(MeshBlock *pmb)
   if (minbeta > 0.01)  flag_beta = -1;
 
   // return flag 
-  if ((flag_fjz == 1) || (flag_beta == 1)) return 1;
-  if ((flag_fjz == -1) && (flag_beta == -1)) return -1;
+  if ((flag_p == 1) || (flag_beta == 1) || (flag_fjz == 1)) return 1;
+  if ((flag_p == -1) && (flag_beta == -1) && (flag_fjz == -1)) return -1;
   return 0;
   
 }
