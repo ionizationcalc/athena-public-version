@@ -136,7 +136,9 @@ void HydroDiffusion::CalcHydroDiffusionFlux(const AthenaArray<Real> &prim,
 
   if (kappa_iso > 0.0 || kappa_aniso > 0.0) ClearHydroFlux(cndflx);
   if (kappa_iso > 0.0) ThermalFlux_iso(prim, cons, cndflx);
-  if (kappa_aniso > 0.0) ThermalFlux_aniso(prim, cons, cndflx);
+  //if (kappa_aniso > 0.0) ThermalFlux_aniso(prim, cons, cndflx);
+  // Using P-field instead of cons
+  if (kappa_aniso > 0.0) ThermalFlux_aniso(prim, pf->bcc, cndflx);
 
 
   return;
