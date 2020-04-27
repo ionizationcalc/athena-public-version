@@ -45,7 +45,6 @@ Real func_integ_pphi(Real r, const Real phi);
 static Real func_bphi(const Real r);
 static Real func_rjphi(const Real r);
 static Real func_uphi(const Real r);
-static Real func_back(const Real r);
 static Real func_bmx(const Real x1, const Real x2);
 static Real func_bmy(const Real x1, const Real x2);
 
@@ -65,7 +64,22 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
 static Real beta0, temperature0;
 static int fr_case;
 static Real fr_d, fr_h, fr_ri, fr_del, fr_rja;
-static Real p_ambient=0.06, te_ambient=0.6, rho_ambient=0.1;
+static Real gauss_c1;
+static Real p_ambient=0.6, te_ambient=0.6, rho_ambient=1.0;
+
+// Boundary conditions
+void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh);
+void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh);
+void OpenInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh);
+void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh);
 
 //==============================================================================
 //! \fn void Mesh::InitUserMeshData(ParameterInput *pin)
@@ -75,6 +89,10 @@ static Real p_ambient=0.06, te_ambient=0.6, rho_ambient=0.1;
 //==============================================================================
 void Mesh::InitUserMeshData(ParameterInput *pin) {
   // Enroll boundary value function pointers
+  EnrollUserBoundaryFunction(INNER_X1, SymmInnerX1);
+  EnrollUserBoundaryFunction(OUTER_X1, OpenOuterX1);
+  EnrollUserBoundaryFunction(INNER_X2, OpenInnerX2);
+  EnrollUserBoundaryFunction(OUTER_X2, OpenOuterX2);
   return;
 }
 
@@ -135,11 +153,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   Real gamma_const = 5./3.;
   
   // Initialize the flux rope
-  fr_d = 0.0625;
-  fr_h = 0.15;
-  fr_ri = 0.01;
-  fr_del = 0.0;
-  fr_rja = 6000.0;
+  fr_d = 0.25;
+  fr_h = 0.5;
+  fr_ri = 0.1;
+  fr_del = 0.025;
+  fr_rja = 2.0*1.0*(fr_ri+0.5*fr_del)
+    /((fr_ri*fr_ri + 0.25*fr_del*fr_del-2.0*fr_del*fr_del/3.145/3.145));
+  gauss_c1 = fr_ri*(2./4.29193);
   
   // Define the local temporary array: az & pgas
   int nx1 = (ie-is)+1 + 2*(NGHOST);
@@ -232,23 +252,6 @@ Real func_rhoini(Real x, Real y) {
   p = func_pini(x, y);
   te = func_teini(x, y);
   
-  /* Add a dense (low temperature) fluxrope core
-   Real pi = 3.14159265358979;
-   Real r, r1, r2, r_edge;
-   Real t_inner, t_outer;
-   t_outer = te;
-   t_inner = t_outer*1.0e-2;
-   r1 = fr_ri - 0.5*fr_del;
-   r_edge = fr_del;
-   r = sqrt(x*x + pow(y-fr_h,2));
-   if (r <= r1) {
-   te = t_inner;
-   } else if (r <= r1 + r_edge) {
-   te = t_inner + 0.5*(t_outer-t_inner)*(1.0-cos(pi*(r-r1)/r_edge));
-   } else {
-   te = te;
-   }*/
-  
   // Get non-dimensional density
   rho = p/te;
   return rho;
@@ -259,7 +262,7 @@ Real func_rhoini(Real x, Real y) {
 //==============================================================================
 Real func_azini(Real x, Real y) {
   Real Ixx, Iyy, az_out;
-  Real az0=0, x0=0.5, y0=0.5;
+  Real az0=0, x0=-1.0, y0=-1.0;
   // Integrate (y=y0 -> y) at x = x0 in the y-direction
   Iyy = adaptiveSimpsons(func_integ_bx,
                          x0,
@@ -283,7 +286,6 @@ Real func_bzini(Real x, Real y) {
   r = sqrt(x*x + (y-fr_h)*(y-fr_h));
   p_fluxrope = -func_uphi(r);
   bz = sqrt(2.0*p_fluxrope);
-  bz = 0;
   return bz;
 }
 
@@ -310,9 +312,8 @@ static Real func_bmx(const Real x, const Real y) {
   Real rs, rm;
   Real bmx;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
-  rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   if (rs > 0.0) {
-    bmx = +func_bphi(rs)*(y-fr_h)/rs - func_bphi(rm)*(y+fr_h)/rm;
+    bmx = +func_bphi(rs)*(y-fr_h)/rs;
   } else {
     bmx = 0.0;
   }
@@ -324,9 +325,8 @@ static Real func_bmy(const Real x, const Real y) {
   Real rs, rm;
   Real bmy;
   rs = sqrt(pow(x, 2) + pow(y - fr_h, 2));
-  rm = sqrt(pow(x, 2) + pow(y + fr_h, 2));
   if (rs > 0.0) {
-    bmy = -func_bphi(rs)*x/rs + func_bphi(rm)*x/rm;
+    bmy = -func_bphi(rs)*x/rs;
   } else {
     bmy = 0.0;
   }
@@ -354,6 +354,18 @@ static Real func_bphi(const Real r)
   } else {
     bphi = -0.5 * fr_rja * (riq + 0.25 * delq - 2. * delq / piq) / r;
   }
+  
+  /* case 2: Gaussian distribution
+  Real I1 = fr_rja*2.0*PI*SQR(gauss_c1)*(1.0 - exp(-0.5*SQR(r/gauss_c1)));
+  
+  Real I = I1;
+  
+  if (r > 0.0) {
+    bphi = -I / (2.0 * PI * r);
+  } else {
+    bphi = 0.0;
+  }
+  */
   return bphi;
 }
 
@@ -386,19 +398,10 @@ static Real func_rjphi(const Real r)
   } else {
     rjphi = 0.;
   }
+  /* Case 2: Gaussian
+  rjphi = fr_rja*exp(-0.5*pow((r/gauss_c1), 2));
+  */
   return rjphi;
-}
-
-static Real func_back(const Real r)
-{
-  Real riq, delq, piq, rmm, back;
-  Real pi = 3.14159265358979;
-  riq = pow(fr_ri, 2);
-  delq = pow(fr_del, 2);
-  piq = pow(pi, 2);
-  rmm = 0.5 * fr_rja * (riq + 0.25 * delq - 2. * delq / piq);
-  back = rmm / pow(r, 3);
-  return back;
 }
 
 //==============================================================================
@@ -442,4 +445,205 @@ double adaptiveSimpsonsAux(double (*f)(double, double),
   +adaptiveSimpsonsAux(f,
                        param,
                        c, b, epsilon/2, Sright, fc, fb, fe, bottom-1);
+}
+
+//==============================================================================
+// SymmInnerX1 boundary condution
+//==============================================================================
+void SymmInnerX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh) {
+  // copy hydro variables into ghost zones
+  for (int n=0; n<(NHYDRO); ++n) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          prim(n,k,j,is-i) = prim(n,k,j,is+i-1);
+        }
+      }}
+  }
+  
+  // Set velocity Vx
+  for (int k=ks; k<=ke; ++k) {
+    for (int j=js; j<=je; ++j) {
+      for (int i=1; i<=ngh; ++i) {
+        prim(IVX,k,j,is-i) = -prim(IVX,k,j,is+i-1);
+      }
+    }
+  }
+  
+  // copy face-centered magnetic fields into ghost zones
+  if (MAGNETIC_FIELDS_ENABLED) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x1f(k,j,(is-i)) = b.x1f(k,j,is+i);
+        }
+      }}
+    
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je+1; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x2f(k,j,(is-i)) = -b.x2f(k,j,is+i-1);
+        }
+      }}
+    
+    for (int k=ks; k<=ke+1; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x3f(k,j,(is-i)) = b.x3f(k,j,is+i-1);
+        }
+      }}
+  }
+}
+
+//==============================================================================
+// Open boudnary condition at the right edge
+//==============================================================================
+//! \fn void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+//                         FaceField &b, Real time, Real dt,
+//                         int is, int ie, int js, int je, int ks, int ke, int ngh)
+//  \brief Open boundary conditions, outer x1 boundary
+
+void OpenOuterX1(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh) {
+  // copy hydro variables into ghost zones
+  for (int n=0; n<(NHYDRO); ++n) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          prim(n,k,j,ie+i) = prim(n,k,j,ie-i+1);
+        }
+      }
+    }
+  }
+  
+  // copy face-centered magnetic fields into ghost zones
+  if (MAGNETIC_FIELDS_ENABLED) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je+1; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x2f(k,j,(ie+i)) = 2.0*b.x2f(k,j,(ie+i-1))-b.x2f(k,j,(ie+i-2));
+        }
+      }}
+    
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x1f(k,j,(ie+i+1)) = b.x1f(k,j,(ie+i))
+          -(pco->dx1f(ie+i)/pco->dx2f(j))
+          *(b.x2f(k,(j+1),(ie+i)) - b.x2f(k,j,(ie+i)));
+        }
+      }}
+    
+    for (int k=ks; k<=ke+1; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=1; i<=ngh; ++i) {
+          b.x3f(k,j,(ie+i)) = b.x3f(k,j,(ie-i+1));
+        }
+      }}
+  }
+  
+  return;
+}
+
+//==============================================================================
+// OpenInnerX2 boundary condition
+//==============================================================================
+//! \fn void OpenInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+//                       FaceField &b, Real time, Real dt,
+//                       int is, int ie, int js, int je, int ks, int ke, int ngh)
+//  \brief Open boundary conditions at the bottom.
+
+void OpenInnerX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh) {
+  // (a) First extroplate all primary values
+  for (int n=0; n<(NHYDRO); ++n) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          prim(n,k,js-j,i) = prim(n,k,js+j-1,i);
+        }
+      }
+    }
+  }
+  // (b) Set face-centered magnetic fields into ghost zones
+  if (MAGNETIC_FIELDS_ENABLED) {
+    Real pbypx;
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie+1; ++i) {
+          b.x1f(k,(js-j),i) = 2.0*b.x1f(k,(js-j+1),i) - b.x1f(k,(js-j+2),i);
+        }
+      }
+    }
+    
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          b.x2f(k,(js-j),i) = b.x2f(k,(js-j+1),i)
+          +pco->dx2f(js-j)/pco->dx1f(i)*(b.x1f(k,(js-j),i+1)-b.x1f(k,(js-j),i));
+        }
+      }
+    }
+    
+    for (int k=ks; k<=ke+1; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          b.x3f(k,(js-j),i) = b.x3f(k,js+j-1,i);
+        }
+      }
+    }
+  }
+  return;
+}
+
+//==============================================================================
+// OpenOuterX2 boundary condition
+//==============================================================================
+void OpenOuterX2(MeshBlock *pmb, Coordinates *pco, AthenaArray<Real> &prim,
+                 FaceField &b, Real time, Real dt,
+                 int is, int ie, int js, int je, int ks, int ke, int ngh) {
+  // copy hydro variables into ghost zones
+  for (int n=0; n<(NHYDRO); ++n) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          prim(n,k,je+j,i) = prim(n,k,je-j+1,i);
+        }
+      }
+    }
+  }
+  
+  // copy face-centered magnetic fields into ghost zones
+  if (MAGNETIC_FIELDS_ENABLED) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie+1; ++i) {
+          b.x1f(k,(je+j),i) = 2.0*b.x1f(k,(je+j-1),i) - b.x1f(k,(je+j-2),i);
+        }
+      }
+    }
+    
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          b.x2f(k,(je+j+1),i) = b.x2f(k,(je+j),i)
+          -pco->dx2f(je+j)/pco->dx1f(i)*(b.x1f(k,(je+j),i+1)-b.x1f(k,(je+j),i));
+        }
+      }
+    }
+    
+    for (int k=ks; k<=ke+1; ++k) {
+      for (int j=1; j<=ngh; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          b.x3f(k,(je+j  ),i) = b.x3f(k,(je-j+1),i);
+        }
+      }
+    }
+  }
+  
+  return;
 }

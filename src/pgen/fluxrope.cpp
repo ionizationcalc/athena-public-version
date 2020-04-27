@@ -285,10 +285,10 @@ Real func_rhoini(Real x, Real y) {
   Real rho_ambient = 1.0*scale_bgdens;
   
   // isothermal
-  rho = func_pini(x, y)/func_teini(x, y);
+  //rho = func_pini(x, y)/func_teini(x, y);
 
   // adiabatic
-  // rho = rho_ambient*pow(func_pini(x, y)/p_ambient, 0.6);
+  rho = rho_ambient*pow(func_pini(x, y)/p_ambient, 0.6);
 
   // Add a dense bottom
   Real h = 0.04;
@@ -307,7 +307,6 @@ Real func_rhoini(Real x, Real y) {
   t_outer = 1.0; // This is a scaled T, not the non-dimensional T.
   t_inner = scale_lowtcore*t_outer;
   t_rope = t_inner + (t_outer-t_inner)*exp(-0.5*pow(r/gauss_c1, 2));
-  
   rho = rho/t_rope;
   */
   

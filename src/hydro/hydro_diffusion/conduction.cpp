@@ -3,6 +3,8 @@
 // Copyright(C) 2014 James M. Stone <jmstone@princeton.edu> and other code
 // contributors
 // Licensed under the 3-clause BSD License, see LICENSE file for details
+// Update:
+//  Jan 2020: kaapa is for conductivity instead of the previous diffusivity.
 //==============================================================================
 
 // Athena++ headers
@@ -91,11 +93,11 @@ void HydroDiffusion::ThermalFlux_iso(const AthenaArray<Real> &prim,
     for (int j=jl; j<=ju; ++j) {
 #pragma omp simd
       for (int i=is; i<=ie+1; ++i) {
-        kappaf = 0.5*(kappa(ISO,k,j,i)+kappa(ISO,k,j,i-1));
-        denf = 0.5*(prim(IDN,k,j,i)+prim(IDN,k,j,i-1));
+        kappaf = 2.0*kappa(ISO,k,j,i)*kappa(ISO,k,j,i-1)
+                /(kappa(ISO,k,j,i)+kappa(ISO,k,j,i-1));
         dTdx = (prim(IPR,k,j,i)/prim(IDN,k,j,i) - prim(IPR,k,j,i-1)/
                 prim(IDN,k,j,i-1))/pco_->dx1v(i-1);
-        x1flux(k,j,i) -= kappaf*denf*dTdx;
+        x1flux(k,j,i) -= kappaf*dTdx;
       }
     }
   }
@@ -113,11 +115,11 @@ void HydroDiffusion::ThermalFlux_iso(const AthenaArray<Real> &prim,
       for (int j=js; j<=je+1; ++j) {
 #pragma omp simd
         for (int i=il; i<=iu; ++i) {
-          kappaf = 0.5*(kappa(ISO,k,j,i)+kappa(ISO,k,j-1,i));
-          denf = 0.5*(prim(IDN,k,j,i)+prim(IDN,k,j-1,i));
+          kappaf = 2.0*kappa(ISO,k,j,i)*kappa(ISO,k,j-1,i)
+                  /(kappa(ISO,k,j,i)+kappa(ISO,k,j-1,i));
           dTdy = (prim(IPR,k,j,i)/prim(IDN,k,j,i)-prim(IPR,k,j-1,i)/
                     prim(IDN,k,j-1,i))/pco_->h2v(i)/pco_->dx2v(j-1);
-          x2flux(k,j,i) -= kappaf*denf*dTdy;
+          x2flux(k,j,i) -= kappaf*dTdy;
         }
       }
     }
@@ -136,11 +138,11 @@ void HydroDiffusion::ThermalFlux_iso(const AthenaArray<Real> &prim,
       for (int j=jl; j<=ju; ++j) {
 #pragma omp simd
         for (int i=il; i<=iu; ++i) {
-          kappaf = 0.5*(kappa(ISO,k,j,i)+kappa(ISO,k-1,j,i));
-          denf = 0.5*(prim(IDN,k,j,i)+prim(IDN,k-1,j,i));
+          kappaf = 2.0*kappa(ISO,k,j,i)*kappa(ISO,k-1,j,i)
+                  /(kappa(ISO,k,j,i)+kappa(ISO,k-1,j,i));
           dTdz = (prim(IPR,k,j,i)/prim(IDN,k,j,i)-prim(IPR,k-1,j,i)/
                    prim(IDN,k-1,j,i))/pco_->dx3v(k-1)/pco_->h31v(i)/pco_->h32v(j);
-          x3flux(k,j,i) -= kappaf*denf*dTdz;
+          x3flux(k,j,i) -= kappaf*dTdz;
         }
       }
     }
@@ -204,8 +206,8 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
     for (int j=jl; j<=ju; ++j) {
   #pragma omp simd
       for (int i=is; i<=ie+1; ++i) {
-        kappaf = 0.5*(kappa(ANI,k,j,i)+kappa(ANI,k,j,i-1));
-        denf = 0.5*(prim(IDN,k,j,i)+prim(IDN,k,j,i-1));
+        kappaf = 2.0*kappa(ANI,k,j,i)*kappa(ANI,k,j,i-1)
+                /(kappa(ANI,k,j,i)+kappa(ANI,k,j,i-1));
         dTdx = (te(k,j,i) - te(k,j,i-1))/pco_->dx1v(i-1);
         
         // Monotonized temperature difference dT/dy
@@ -231,7 +233,7 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
           B02 = SQR(Bx) + SQR(By);
           B02 = max(B02,TINY_NUMBER); /* limit in case B=0 */
           bDotGradT = Bx*dTdx + By*dTdy;
-          kd = kappaf*denf;
+          kd = kappaf;
           x1flux(k,j,i) -= kd*(Bx*bDotGradT)/B02;
 
         // Add flux at x1-interface, 3D PROBLEM
@@ -242,7 +244,7 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
           B02 = SQR(Bx) + SQR(By) + SQR(Bz);
           B02 = max(B02,TINY_NUMBER); // limit in case B=0
           bDotGradT = Bx*dTdx + By*dTdy + Bz*dTdz;
-          kd = kappaf*denf;
+          kd = kappaf;
           x1flux(k,j,i) -= kd*(Bx*bDotGradT)/B02;
         }
       }
@@ -262,8 +264,8 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
       for (int j=js; j<=je+1; ++j) {
   #pragma omp simd
         for (int i=il; i<=iu; ++i) {
-          kappaf = 0.5*(kappa(ANI,k,j,i)+kappa(ANI,k,j-1,i));
-          denf = 0.5*(prim(IDN,k,j,i)+prim(IDN,k,j-1,i));
+          kappaf = 2.0*kappa(ANI,k,j,i)*kappa(ANI,k,j-1,i)
+                  /(kappa(ANI,k,j,i)+kappa(ANI,k,j-1,i));
           dTdy = (te(k,j,i)-te(k,j-1,i))/pco_->h2v(i)/pco_->dx2v(j-1);
           
           // Monotonized temperature difference dT/dx
@@ -289,7 +291,7 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
             B02 = SQR(Bx) + SQR(By);
             B02 = max(B02,TINY_NUMBER); // limit in case B=0
             bDotGradT = Bx*dTdx + By*dTdy;
-            kd = kappaf*denf;
+            kd = kappaf;
             x2flux(k,j,i) -= kd*(By*bDotGradT)/B02;
 
           // Add flux at x2-interface, 3D PROBLEM
@@ -300,7 +302,7 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
             B02 = SQR(Bx) + SQR(By) + SQR(Bz);
             B02 = max(B02,TINY_NUMBER); // limit in case B=0
             bDotGradT = Bx*dTdx + By*dTdy + Bz*dTdz;
-            kd = kappaf*denf;
+            kd = kappaf;
             x2flux(k,j,i) -= kd*(By*bDotGradT)/B02;
           }
         }
@@ -321,8 +323,8 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
       for (int j=jl; j<=ju; ++j) {
   #pragma omp simd
         for (int i=il; i<=iu; ++i) {
-          kappaf = 0.5*(kappa(ANI,k,j,i)+kappa(ANI,k-1,j,i));
-          denf = 0.5*(prim(IDN,k,j,i)+prim(IDN,k-1,j,i));
+          kappaf = 2.0*kappa(ANI,k,j,i)*kappa(ANI,k-1,j,i)
+                  /(kappa(ANI,k,j,i)+kappa(ANI,k-1,j,i));
           dTdz = (te(k,j,i)-te(k-1,j,i))/pco_->dx3v(k-1)/pco_->h31v(i)/pco_->h32v(j);
           
           // Monotonized temperature difference dT/dx
@@ -346,7 +348,7 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
           B02 = SQR(Bx) + SQR(By) + SQR(Bz);
           B02 = max(B02,TINY_NUMBER); // limit in case B=0
           bDotGradT = Bx*dTdx + By*dTdy + Bz*dTdz;
-          kd = kappaf*denf;
+          kd = kappaf;
           x3flux(k,j,i) -= kd*(Bz*bDotGradT)/B02;
         }
       }
@@ -358,9 +360,6 @@ void HydroDiffusion::ThermalFlux_aniso(const AthenaArray<Real> &prim,
 
   return;
 }
-
-
-
 
 //------------------------------------------------------------------------------
 // constant conduction
